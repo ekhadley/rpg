@@ -307,10 +307,11 @@ export function getCacheMode() {
 }
 
 // The core version new stories are created with, and the one stories predating the per-story
-// setting fall back to. Stored per browser, pushed to the server on connect like the cache mode.
+// setting fall back to. Stored per browser, pushed to the server on connect like the cache mode;
+// until the user picks one it is the server's pinned default.
 export function getDefaultCore() {
     const saved = localStorage.getItem('defaultCore');
-    return window.CORES.includes(saved) ? saved : window.CORES[0];
+    return window.CORES.includes(saved) ? saved : window.DEFAULT_CORE;
 }
 
 // Narrator model list: one row per model with hover reorder arrows and a trash, plus an inline row

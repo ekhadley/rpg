@@ -46,20 +46,25 @@ class TurnTree:
     def active_messages(self) -> list[dict]:
         return self.messages_to(self.current_leaf)
 
+    # Apply one node's `files` delta to a story-context state in place. A delta value of None is a
+    # tombstone (file deleted that turn). Keys are bare filenames; '/'-containing keys (legacy
+    # instruction-file snapshots written by an older version) are ignored.
+    @staticmethod
+    def apply_delta(state: dict[str, str], delta: dict) -> None:
+        for fname, contents in delta.items():
+            if "/" in fname:
+                continue
+            if contents is None:
+                state.pop(fname, None)
+            else:
+                state[fname] = contents
+
     # Reconstruct the full story-context file state at a node by replaying each node's `files`
-    # delta down the path root→node. A delta value of None is a tombstone (file deleted that turn).
-    # Keys are bare filenames; '/'-containing keys (legacy instruction-file snapshots written by an
-    # older version) are ignored. Returns {filename: full_contents}, empty for nodes with no records.
+    # delta down the path root→node. Returns {filename: full_contents}, empty for nodes with no records.
     def file_state_at(self, node_id) -> dict[str, str]:
         state: dict[str, str] = {}
         for nid in self.path_to(node_id):
-            for fname, contents in self.nodes[nid].get("files", {}).items():
-                if "/" in fname:
-                    continue
-                if contents is None:
-                    state.pop(fname, None)
-                else:
-                    state[fname] = contents
+            self.apply_delta(state, self.nodes[nid].get("files", {}))
         return state
 
     def set_leaf(self, node_id) -> None:

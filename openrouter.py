@@ -3,6 +3,7 @@ import json
 import requests
 import copy
 import os
+import threading
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -18,6 +19,31 @@ CACHE_CONTROLS = {
     "5m": {"type": "ephemeral"},
     "1h": {"type": "ephemeral", "ttl": "1h"},
 }
+
+# Seconds to establish the connection, and seconds without a single byte before a stream is given up
+# as hung. OpenRouter sends keepalive comments while the upstream model is still thinking, so a
+# healthy stream never goes quiet for long.
+CONNECT_TIMEOUT = 30
+READ_TIMEOUT = 180
+
+class TurnFailed(Exception):
+    """A model turn that did not complete: the request was refused, the stream broke or hung, the
+    provider sent an error mid-response, or the user stopped it. By the time this is raised the
+    provider has already dropped the turn's partial messages, so nothing half-finished (an assistant
+    message cut off mid-text, a tool call with no result) survives. `aborted` marks a user stop."""
+    def __init__(self, message: str, aborted: bool = False):
+        super().__init__(message)
+        self.aborted = aborted
+
+def _errorText(err) -> str:
+    """The message out of an OpenRouter error object (`{"code": .., "message": .., "metadata": ..}`)."""
+    if not isinstance(err, dict):
+        return str(err)
+    text = err.get("message") or json.dumps(err)
+    raw = (err.get("metadata") or {}).get("raw")
+    if raw and raw not in text:
+        text = f"{text} ({raw})"
+    return f"{text} [{err['code']}]" if err.get("code") else text
 
 class OpenRouterStream:
     """
@@ -55,7 +81,8 @@ class OpenRouterStream:
                 "provider": {"only": ["anthropic"]} if "claude" in model_name.lower() else None,
                 "stream": True
             },
-            stream = True
+            stream = True,
+            timeout = (CONNECT_TIMEOUT, READ_TIMEOUT),
         )
         if self.response_stream.status_code != 200:
             error_msg = self.response_stream.text.replace("\\n ", "\n ").replace("\\\"", "\"")
@@ -183,10 +210,38 @@ class OpenRouterStream:
                 continue
     
     def close(self):
-        self.response_stream.close()
-    
+        # Safe to call from another thread (a stop) and before the request was made (a refused
+        # connection, which leaves no response_stream behind).
+        stream = getattr(self, "response_stream", None)
+        if stream is not None:
+            stream.close()
+
     def __del__(self):
         self.close()
+
+def _mergeReasoningDetails(stored: list[dict], deltas: list[dict]) -> None:
+    """Fold one chunk's reasoning_details into the message's list. A block streams as many chunks
+    sharing an `index`: their text (or summary / encrypted data) concatenates, and every other
+    field — the signature arrives on the block's last chunk — is taken from the latest chunk that
+    carries it. The finished list goes back to the provider with the message, and a block is only
+    valid whole."""
+    for d in deltas:
+        if not isinstance(d, dict) or not d:
+            continue
+        target = None
+        if d.get("index") is not None:
+            target = next((s for s in stored if s.get("index") == d["index"]), None)
+        elif stored and stored[-1].get("index") is None and stored[-1].get("type") == d.get("type") and stored[-1].get("id") == d.get("id"):
+            target = stored[-1]  # no index to match on: a run of same-typed chunks is one block
+        if target is None:
+            stored.append(dict(d))
+            continue
+        for k, v in d.items():
+            if k in ("text", "summary", "data"):
+                if isinstance(v, str):
+                    target[k] = (target[k] if isinstance(target.get(k), str) else "") + v
+            elif v is not None or k not in target:
+                target[k] = v
 
 class OpenRouterProvider():
     def __init__(
@@ -211,6 +266,8 @@ class OpenRouterProvider():
         self.usage_history: list[dict] = []  # Track usage per turn
         self.system_turn_entries: int = 0  # Number of usage entries from the initial system turn
         self.last_turn_cost: float = 0.0
+        self._stop = threading.Event()  # set by stop(); checked between events and tool rounds
+        self._stream: OpenRouterStream | None = None  # the stream in flight, so stop() can close it
 
     def getCostStats(self) -> dict:
         """Calculate cost statistics from usage history"""
@@ -295,107 +352,155 @@ class OpenRouterProvider():
             key = self.key
         )
 
+    def stop(self) -> None:
+        """Abort the turn in progress, from any thread. The stream loop sees the flag at its next
+        event and fails the turn there; closing the response helps a read that is blocked on the
+        socket get there sooner. OpenRouter keeps a quiet stream alive with comment lines every few
+        seconds, so the stop lands within seconds at worst."""
+        self._stop.set()
+        if self._stream is not None:
+            self._stream.close()
+
     def run(self, system_turn=False) -> None:
+        """Run the model until it stops calling tools.
+
+        A turn either completes or is discarded whole: on any failure (a refused request, a broken or
+        hung stream, an error the provider streams mid-response, a stop() from the user) the messages
+        this call added are dropped, so no cut-off assistant message or tool call without a result is
+        ever kept, turn_end is still reported to the callback handler so the client unlocks, and
+        TurnFailed is raised for the caller to reset whatever else the turn touched."""
+        start = len(self.messages)
         turn_start = len(self.usage_history)
-        finish_reason = None
+        self._stop.clear()
         try:
             finish_reason = self._run()
         except Exception as e:
-            logger.error(f"Error during model response: {e}", exc_info=True)
-            finish_reason = "error"
+            del self.messages[start:]
+            del self.usage_history[turn_start:]
+            self.last_turn_cost = 0.0
+            aborted = self._stop.is_set()
+            if aborted:
+                logger.info("turn stopped by the user")
+            else:
+                logger.error(f"Error during model response: {e}", exc_info=True)
+            self.cb.turn_end(cost_stats=self.getCostStats(), finish_reason="aborted" if aborted else "error")
+            raise TurnFailed("Turn stopped." if aborted else str(e), aborted=aborted) from e
+        finally:
+            self._stream = None
         turn_entries = self.usage_history[turn_start:]
         self.last_turn_cost = sum(u.get("cost", 0.0) for u in turn_entries)
         if system_turn:
             self.system_turn_entries = len(turn_entries)
         self.cb.turn_end(cost_stats=self.getCostStats(), finish_reason=finish_reason)
 
+    def _checkStopped(self) -> None:
+        if self._stop.is_set():
+            raise RuntimeError("stopped by the user")
+
+    def _assistantMessage(self) -> dict:
+        """The assistant message the current stream is building, started on its first chunk."""
+        if self.messages[-1]["role"] != "assistant":
+            self.messages.append({"role": "assistant", "content": "", "reasoning": "", "reasoning_details": []})
+        return self.messages[-1]
+
     def _run(self) -> str | None:
         finish_reason = None
         while True:
+            self._checkStopped()  # a stop pressed while the previous round's tools ran
             pending_tool_calls = False
+            round_finish = None  # the finish_reason this stream ended with; None means it never finished
             stream = self.getStream()
+            self._stream = stream
 
             for event in stream:
-                # Capture usage from the final chunk (comes after finish_reason)
+                self._checkStopped()
+                if event.get("error"):
+                    raise RuntimeError(f"OpenRouter error: {_errorText(event['error'])}")
+
+                # Usage rides on the final chunk, after finish_reason, and belongs to the assistant
+                # message this stream built. A stream that built none (an empty or errored completion)
+                # still counts toward the turn's cost, but has no message to hang it on.
                 usage = event.get("usage")
                 if usage:
-                    self.messages[-1]["usage"] = usage
                     self.usage_history.append(usage)
+                    if self.messages[-1]["role"] == "assistant":
+                        self.messages[-1]["usage"] = usage
+                    else:
+                        logger.warning(f"usage reported for a stream that produced no assistant message: {usage}")
 
-                # Skip events without choices (e.g., usage-only final chunks)
-                choices = event.get("choices", [])
+                choices = event.get("choices") or []
                 if not choices:
                     continue
-
                 event_item = choices[0]
-                delta = event_item.get("delta", {})
-                if not delta:
-                    continue
+                if event_item.get("error"):
+                    raise RuntimeError(f"OpenRouter error: {_errorText(event_item['error'])}")
+                delta = event_item.get("delta") or {}
 
-                # Initialize assistant message on first delta
-                if self.messages[-1]["role"] != "assistant":
-                    self.messages.append({"role": "assistant", "content": "", "reasoning": "", "reasoning_details": [{}]})
+                if delta:
+                    msg = self._assistantMessage()
 
-                # Handle text content
-                delta_content = delta.get("content")
-                if delta_content:
-                    self.messages[-1]["content"] += delta_content
-                    self.cb.text_output(text=delta_content)
+                    delta_content = delta.get("content")
+                    if delta_content:
+                        msg["content"] += delta_content
+                        self.cb.text_output(text=delta_content)
 
-                # Handle reasoning (supports multiple formats)
-                # Anthropic models send reasoning in both delta.reasoning AND delta.reasoning_details
-                # We must use one OR the other, not both, to avoid duplication
-                reasoning_delta = None
-                reasoning_details = delta.get("reasoning_details", [])
+                    # Reasoning comes in one of two shapes. delta.reasoning_details is a list of
+                    # blocks, each streamed as many chunks sharing an index, and it goes back to the
+                    # provider with the message, so it is merged rather than replaced. Anthropic
+                    # models send it AND delta.reasoning, so the text is taken from one or the other.
+                    reasoning_delta = None
+                    details = delta.get("reasoning_details")
+                    if isinstance(details, list) and details:
+                        for detail in details:
+                            if not isinstance(detail, dict):
+                                continue
+                            text = detail.get("text") or (detail.get("summary") if detail.get("type") == "reasoning.summary" else None)
+                            if text:
+                                reasoning_delta = (reasoning_delta or "") + text
+                        _mergeReasoningDetails(msg["reasoning_details"], details)
+                    if reasoning_delta is None:
+                        reasoning_delta = delta.get("reasoning")
+                    if reasoning_delta:
+                        msg["reasoning"] += reasoning_delta
+                        self.cb.think_output(text=reasoning_delta)
 
-                if reasoning_details and isinstance(reasoning_details, list):
-                    for detail in reasoning_details:
-                        if isinstance(detail, dict):
-                            detail_text = detail.get("text")
-                            if detail_text:
-                                reasoning_delta = (reasoning_delta or "") + detail_text
-                            elif detail.get("type") == "reasoning.summary":
-                                summary = detail.get("summary")
-                                if summary:
-                                    reasoning_delta = (reasoning_delta or "") + summary
+                    for tool_call in delta.get("tool_calls") or []:
+                        fn = tool_call.get("function") or {}
+                        if tool_call.get("id"):
+                            # A new call. Stored as its own dict, not the chunk's, so the argument
+                            # fragments below append to our copy: a provider may send the whole call,
+                            # arguments included, in this one chunk, and they must count once.
+                            stored = {**tool_call, "function": {**fn, "arguments": fn.get("arguments") or ""}}
+                            msg.setdefault("tool_calls", []).append(stored)
+                            self.cb.tool_request(name=fn.get("name", ""), inputs={})
+                        elif fn.get("arguments"):
+                            msg["tool_calls"][-1]["function"]["arguments"] += fn["arguments"]
 
-                    if reasoning_details != [{}]:
-                        self.messages[-1]["reasoning_details"] = reasoning_details
-
-                # Only fall back to delta.reasoning if reasoning_details didn't provide content
-                if reasoning_delta is None:
-                    reasoning_delta = delta.get("reasoning")
-
-                if reasoning_delta:
-                    self.messages[-1]["reasoning"] += reasoning_delta
-                    self.cb.think_output(text=reasoning_delta)
-
-                # Handle tool calls
-                tool_calls = delta.get("tool_calls", [])
-                for tool_call in tool_calls:
-                    if "id" in tool_call:
-                        if "tool_calls" not in self.messages[-1]:
-                            self.messages[-1]["tool_calls"] = []
-                        self.messages[-1]["tool_calls"].append(tool_call)
-                        self.cb.tool_request(name=tool_call["function"]["name"], inputs={})
-                    self.messages[-1]["tool_calls"][-1]["function"]["arguments"] += tool_call["function"]["arguments"]
-
-                # Handle finish reasons
-                finish_reason = event_item.get("finish_reason")
-                if finish_reason:
+                # Handle the finish reason. Checked whether or not the chunk carried a delta: the final
+                # chunk of a response may be an empty delta with just the finish_reason on it.
+                finish = event_item.get("finish_reason")
+                if finish:
+                    if finish == "error":
+                        raise RuntimeError("OpenRouter reported the response as errored")
+                    round_finish = finish
                     # Check for non-streamed reasoning in final message
-                    final_reasoning = event_item.get("message", {}).get("reasoning") or delta.get("reasoning")
+                    final_reasoning = (event_item.get("message") or {}).get("reasoning") or delta.get("reasoning")
                     if final_reasoning and not self.messages[-1].get("reasoning"):
-                        self.messages[-1]["reasoning"] = final_reasoning
+                        msg = self._assistantMessage()
+                        msg["reasoning"] = final_reasoning
                         self.cb.think_output(text=final_reasoning)
                     # Detect tool calls from message content, not finish_reason string
                     if self.messages[-1].get("tool_calls"):
                         pending_tool_calls = True
-                    if finish_reason not in ("stop", "tool_calls", "end_turn", "tool_use"):
-                        logger.warning(f"Unexpected finish_reason: {finish_reason}")
-                    continue  # Continue to catch usage chunk
+                    if finish not in ("stop", "tool_calls", "end_turn", "tool_use"):
+                        logger.warning(f"Unexpected finish_reason: {finish}")
 
             stream.close()
+            self._stream = None
+            self._checkStopped()  # a closed socket can read as a clean end of stream
+            if round_finish is None:
+                raise RuntimeError("The connection dropped before the model finished its response")
+            finish_reason = round_finish
 
             if not pending_tool_calls:
                 break

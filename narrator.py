@@ -3,7 +3,7 @@ import json
 from utils import getFullStoryInstruction, loadAllPreviousHistory, makeNewStoryDir, STORIES_ROOT_DIR
 from model_tools import Toolbox, SYSTEM_TOOLBOXES
 from callbacks import WebCallbackHandler
-from openrouter import OpenRouterProvider
+from openrouter import OpenRouterProvider, TurnFailed
 from history import TurnTree
 from flask_socketio import SocketIO
     
@@ -134,17 +134,40 @@ class Narrator:
     def _emitHistory(self):
         self.socket.emit('conversation_history', self._transformTreeForFrontend())
 
-    def _runIntoTurn(self, parent_id, before=None):
+    def stop(self) -> None:
+        """Abort the turn in progress (called from the socket thread while a run blocks another)."""
+        self.provider.stop()
+
+    def _runModel(self, user_message: str | None = None) -> bool:
+        """Run the provider over its current message list. A turn that fails is discarded whole:
+        the provider has already dropped its partial messages, and nothing was added to the tree,
+        so this resets the story context and the provider's messages to the active leaf, re-renders
+        the chat from the tree (which removes the partial output and the unsaved user message), and
+        sends `turn_failed` — carrying the user's message so the client can put it back in the input
+        box. Returns whether the turn completed."""
+        try:
+            self.provider.run()
+            return True
+        except TurnFailed as e:
+            self._materialize(self.tree.current_leaf)
+            self._emitHistory()
+            if not self.tree.active_messages() and not loadAllPreviousHistory(self.story_id):
+                self.socket.emit('story_empty')  # a failed opening turn: offer the Start button again
+            self.socket.emit('turn_failed', {"message": str(e), "user_message": user_message, "aborted": e.aborted})
+            return False
+
+    def _runIntoTurn(self, parent_id, before=None, user_message: str | None = None) -> str | None:
         """Run the model, then capture the [user, assistant...] messages just produced
         as a user node + an assistant-node child. The assistant node records the files that
         changed this turn (diff of the parent's reconstructed state vs self.files after the run).
-        Returns the new assistant node id."""
+        Returns the new assistant node id, or None if the turn failed (nothing is added then)."""
         if before is None:
             before = self.tree.file_state_at(parent_id)
         self._setFiles(before)  # working copy the tools mutate this turn
         # the user message is already the last entry; capture from there after the run
         user_start = len(self.provider.messages) - 1
-        self.provider.run()
+        if not self._runModel(user_message):
+            return None
         new = self.provider.messages[user_start:]
         delta = self._diffFiles(before, self.files)
         u = self.tree.add_node(parent_id, "user", new[:1])
@@ -174,7 +197,8 @@ class Narrator:
         self.provider.addUserMessage("System: start of story")
         # Parent on the existing leaf (the hidden synthetic root of a copied/summarized story carries
         # the seeded story context); None only for a genuinely fresh tree.
-        self._runIntoTurn(self.tree.current_leaf)
+        if self._runIntoTurn(self.tree.current_leaf) is None:
+            return
         self._rebuildContext()
         self.saveMessages()
         self._emitHistory()
@@ -266,14 +290,17 @@ class Narrator:
             return 0.0
         return sum(m.get("usage", {}).get("cost", 0.0) for m in node["messages"])
 
-    def handleUserMessage(self, data: dict[str, str]) -> None:
+    def handleUserMessage(self, data: dict[str, str]) -> bool:
+        """Answer a user message as a new turn on the active leaf. Returns whether the turn completed."""
         parent = self.tree.current_leaf
         self._rebuildContext()  # rebuild [system] + active branch before appending the new user turn
         self.provider.addUserMessage(data['message'])
-        self._runIntoTurn(parent)
+        if self._runIntoTurn(parent, user_message=data['message']) is None:
+            return False
         self._rebuildContext()
         self.saveMessages()
         self._emitHistory()
+        return True
 
     def regenerate_turn(self, node_id: str) -> None:
         node = self.tree.nodes.get(node_id)
@@ -284,7 +311,8 @@ class Narrator:
         self.provider.messages = [self._systemMessage()] + self.tree.messages_to(parent)
         self.provider.recompute_usage_from_messages(self.provider.messages)
         n = len(self.provider.messages)
-        self.provider.run()
+        if not self._runModel():
+            return  # the leaf never moved, so the failure path restored the branch being shown
         delta = self._diffFiles(before, self.files)
         self.tree.add_node(parent, "assistant", self.provider.messages[n:], files=delta)
         self._rebuildContext()
@@ -300,7 +328,8 @@ class Narrator:
         self.provider.messages = [self._systemMessage()] + self.tree.messages_to(grandparent)
         self.provider.addUserMessage(new_content)
         self.provider.recompute_usage_from_messages(self.provider.messages)
-        self._runIntoTurn(grandparent, before=before)
+        if self._runIntoTurn(grandparent, before=before, user_message=new_content) is None:
+            return
         self._rebuildContext()
         self.saveMessages()
         self._emitHistory()

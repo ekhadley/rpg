@@ -13,6 +13,26 @@ function formatDebugContent(msg) {
     return JSON.stringify(msg.content, null, 2);
 }
 
+// A unified diff as a <pre>, each line colored by its leading character
+function renderDiff(name, diff) {
+    const pre = document.createElement('pre');
+    pre.className = 'debug-diff';
+    if (!diff) {
+        pre.textContent = name + ': no textual change';
+        return pre;
+    }
+    diff.split('\n').forEach((line, i) => {
+        const span = document.createElement('span');
+        if (line.startsWith('+++') || line.startsWith('---')) span.className = 'diff-meta';
+        else if (line.startsWith('@@')) span.className = 'diff-hunk';
+        else if (line.startsWith('+')) span.className = 'diff-add';
+        else if (line.startsWith('-')) span.className = 'diff-del';
+        span.textContent = (i ? '\n' : '') + line;
+        pre.appendChild(span);
+    });
+    return pre;
+}
+
 function getPreview(msg) {
     const full = formatDebugContent(msg);
     if (!full) return '';
@@ -32,14 +52,22 @@ function renderDebugMessages(messages) {
             return;
         }
 
-        // Per-turn changed-files marker
+        // Per-turn changed-files marker; click to expand the diff of each entry the turn touched
         if (msg.role === '_files') {
             const files = document.createElement('div');
             files.className = 'debug-files';
             const parts = [];
             if (msg.changed && msg.changed.length) parts.push('changed: ' + msg.changed.join(', '));
             if (msg.removed && msg.removed.length) parts.push('removed: ' + msg.removed.join(', '));
-            files.innerHTML = '<i class="fas fa-floppy-disk"></i> ' + parts.join(' · ');
+            const header = document.createElement('div');
+            header.className = 'debug-files-header';
+            header.innerHTML = '<i class="fas fa-floppy-disk"></i> ' + parts.join(' · ');
+            files.appendChild(header);
+            const body = document.createElement('div');
+            body.className = 'debug-files-body';
+            Object.entries(msg.diffs || {}).forEach(([name, diff]) => body.appendChild(renderDiff(name, diff)));
+            files.appendChild(body);
+            header.addEventListener('click', () => files.classList.toggle('expanded'));
             debugModalBody.appendChild(files);
             return;
         }

@@ -5,7 +5,7 @@ import {
     accumulatedContent, setAccumulatedContent,
     setIsToolCallInProgress, setIsThinkingInProgress,
 } from './state.js';
-import { scrollToBottom, scrollToBottomIfStuck, showTypingIndicator, hideTypingIndicator, updateCostDisplay, showErrorPopup } from './ui.js';
+import { scrollToBottom, scrollToBottomIfStuck, showTypingIndicator, hideTypingIndicator, updateCostDisplay, showErrorPopup, showToast } from './ui.js';
 import {
     ensureLiveWrapper, ensureRow, appendReasoning, appendTool, appendDice, closeRows,
 } from './reasoningRow.js';
@@ -213,6 +213,20 @@ function renderNodes(nodes) {
 // Wire up all socket listeners and form handler
 export function initChat() {
     socket.on('error', (data) => showErrorPopup(data.message));
+
+    // The stop button is only visible while a turn is running; the server discards the turn and
+    // re-sends the history, which drops the partial output from the chat.
+    const stopButton = document.getElementById('stop-button');
+    if (stopButton) stopButton.addEventListener('click', () => socket.emit('stop_turn'));
+
+    // A turn that failed or was stopped: nothing was saved (the history re-render that precedes
+    // this event already removed the partial turn), so put the message back to resend.
+    socket.on('turn_failed', function(data) {
+        hideTypingIndicator();
+        if (data.aborted) showToast('Turn stopped');
+        else showErrorPopup(data.message || 'The turn failed.');
+        if (data.user_message && userInput && !userInput.value) userInput.value = data.user_message;
+    });
 
     // Message form submit
     if (messageForm) {

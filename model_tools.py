@@ -114,7 +114,7 @@ def read_story_file_tool_handler(file_name: str, **kwargs) -> str:
     return kwargs['files'][file_name]
 
 def write_story_file_tool_handler(file_name: str, contents: str, **kwargs) -> str:
-    """write_file: Create or overwrite a file in the current story context with the given name and contents. The contents of the file, if it exists, will be deleted permanently. If editing a file, you should read the file first, then write the edited or extended version after.
+    """write_file: Create a file in the current story context, or replace the whole contents of an existing one. The previous contents, if any, are deleted permanently. Use this for new files and full rewrites only: to change part of a file use edit_file, and to add to the end of one use append_file.
     file_name (string): Name of the file to save to, with no file extension and no subfolders.
     contents (string): The contents to write to the file. Do not include backticks around the contents to be saved.
     """
@@ -134,6 +134,25 @@ def append_story_file_tool_handler(file_name: str, contents: str, **kwargs) -> s
     exists = file_name in files
     files[file_name] = files[file_name] + "\n" + contents if exists else contents
     return "Contents appended to file successfully." if exists else "File created and contents added successfully."
+
+def edit_story_file_tool_handler(file_name: str, old_text: str, new_text: str, **kwargs) -> str:
+    """edit_file: Replace one passage of an existing file in the current story context with new text, leaving the rest of the file untouched. Prefer this over write_file for any change smaller than a full rewrite (a changed stat, an inventory line, a paragraph of an NPC sheet). old_text must match the file exactly once; if it matches nowhere or more than once the file is left unchanged and the error says which.
+    file_name (string): Name of the file to edit, with no file extension and no subfolders.
+    old_text (string): The exact passage to replace, copied verbatim from the file (line breaks and whitespace included). Include enough surrounding text to make it unique.
+    new_text (string): The text to put in its place. An empty string deletes the passage.
+    """
+    files = kwargs['files']
+    if file_name not in files:
+        raise ValueError(f"no file named '{file_name}'. Existing files: {', '.join(files) or 'none'}.")
+    if old_text == "":
+        raise ValueError("old_text is empty. Use append_file to add to a file, or write_file to replace it.")
+    count = files[file_name].count(old_text)
+    if count == 0:
+        raise ValueError("old_text was not found in the file. Read the file and copy the passage exactly as it appears.")
+    if count > 1:
+        raise ValueError(f"old_text appears {count} times in the file. Include more of the surrounding text so it matches exactly once.")
+    files[file_name] = files[file_name].replace(old_text, new_text, 1)
+    return "File edited successfully."
 
 def roll_dice_tool_handler(dice: str, **kwargs) -> int:
     """roll_dice: Roll a set of dice with the given number of sides and return the sum of the rolls.
@@ -193,6 +212,7 @@ BASE_HANDLERS = [
     list_story_files_tool_handler,
     read_story_file_tool_handler,
     write_story_file_tool_handler,
+    edit_story_file_tool_handler,
     append_story_file_tool_handler,
 ]
 
