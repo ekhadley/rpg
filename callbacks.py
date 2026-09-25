@@ -71,6 +71,10 @@ class StudioCallbackHandler(CallbackHandler):
         self.run_id = run_id
         self.lane = lane
         self.gate = gate
+        self.finish_reason: str | None = None  # how the lane's turn ended; "error" if the request failed
+
+    def turn_end(self, cost_stats: dict = None, finish_reason: str = None):
+        self.finish_reason = finish_reason
 
     def think_output(self, text):
         self.emit('studio_think', text=text)

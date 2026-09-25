@@ -12,7 +12,7 @@ from utils import (
     historyExists, isValidGameSystem, listGameSystemNames,
     archiveHistory, copyStory, archiveStoryDir, renameStory,
     loadAllPreviousHistory, systemInstructionFile, readMarkdown,
-    listCoreVersions, EVAL_STORIES_DIR, PROMPT_CONTEXT_FILES,
+    listCoreVersions, defaultCoreVersion, EVAL_STORIES_DIR, PROMPT_CONTEXT_FILES,
     loadModels, saveModels,
 )
 from studio import listEvalTurns, runStudio, listRuns, loadRun
@@ -25,7 +25,7 @@ global narrator
 narrator = None
 # cache_mode: "none" | "5m" | "1h". core: the core-instruction version new stories default to,
 # and the one used for stories written before core became a per-story choice.
-settings = {"cache_mode": "1h", "core": listCoreVersions()[0]}
+settings = {"cache_mode": "1h", "core": defaultCoreVersion()}
 models = loadModels()
 
 def init_narrator(story_id: str, story_info: dict, model_name: str) -> Narrator:
@@ -411,13 +411,20 @@ def delete_eval_turn(data: dict[str, str]):
 @socket.on('studio_run')
 def studio_run(data: dict):
     """Generate n completions per arm (model + core version) for a captured turn, streamed lane by lane."""
-    runStudio(
-        socket,
-        eval_id=data['eval_id'],
-        arms=[{"model": a['model'], "version": a['version']} for a in data['arms']],
-        n=int(data.get('n', 1)),
-        cache=bool(data.get('cache', True)),
-    )
+    try:
+        runStudio(
+            socket,
+            eval_id=data['eval_id'],
+            arms=[{"model": a['model'], "version": a['version']} for a in data['arms']],
+            n=int(data.get('n', 1)),
+            cache=bool(data.get('cache', True)),
+        )
+    except Exception as e:
+        # Nothing was started, so no studio_run_started / studio_run_end will follow: the client
+        # needs to hear that the run it is waiting on does not exist (its turn may have been
+        # deleted, or the arm names a core version whose file is gone).
+        logger.error(f"studio run failed to start: {e}", exc_info=True)
+        emit('studio_run_failed', {"eval_id": data.get('eval_id'), "message": f"Studio run failed to start: {e}"})
 
 @socket.on('list_studio_runs')
 def list_studio_runs(data: dict):
@@ -429,7 +436,7 @@ def load_studio_run(data: dict):
 
 @socket.on('get_studio_options')
 def get_studio_options():
-    emit('studio_options', {"versions": listCoreVersions(), "models": models})
+    emit('studio_options', {"versions": listCoreVersions(), "default_version": defaultCoreVersion(), "models": models})
 
 @socket.on('edit_message')
 def edit_message(data):
@@ -495,11 +502,12 @@ def get_stories_with_info():
 
 @app.route('/')
 def index():
-    return render_template('index.html', 
-                           stories=get_stories_with_info(), 
-                           models=models, 
+    return render_template('index.html',
+                           stories=get_stories_with_info(),
+                           models=models,
                            systems=listGameSystemNames(),
                            cores=listCoreVersions(),
+                           default_core=defaultCoreVersion(),
                            selected_story=None)
 
 @app.route('/stories/<story_id>')
@@ -513,6 +521,7 @@ def story_page(story_id):
                            models=models,
                            systems=listGameSystemNames(),
                            cores=listCoreVersions(),
+                           default_core=defaultCoreVersion(),
                            selected_story=story_id)
 
 if __name__ == "__main__":

@@ -86,7 +86,7 @@
             <div class="studio-header">
                 <div class="studio-title-row">
                     <h5>Prompt Studio</h5>
-                    <span class="studio-turn-name" id="studio-turn-name">no turn selected</span>
+                    <span class="studio-turn-name" id="studio-turn-name"></span>
                     <span class="studio-cost" id="studio-cost"></span>
                 </div>
                 <div class="studio-controls" id="studio-controls">
@@ -108,7 +108,7 @@
                     <label class="studio-check custom-checkbox">
                         <input type="checkbox" id="studio-cache"><span class="checkmark"></span>Cache
                     </label>
-                    <button class="studio-run-btn" id="studio-run-btn" disabled title="Select a captured turn first">
+                    <button class="studio-run-btn" id="studio-run-btn">
                         <i class="fas fa-play"></i> Generate
                     </button>
                     <span class="studio-warning" id="studio-warning"></span>
@@ -417,7 +417,7 @@
         </div>
     </div>
 
-    <div id="toast" class="toast"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <div id="error-popup" class="side-popup confirm-popup">
         <div class="confirm-popup-body">
@@ -616,7 +616,7 @@
         </div>
     </div>
 
-    <script>window.MODELS = {{ models|tojson }}; window.CORES = {{ cores|tojson }}; window.STORIES = {{ stories|tojson }};</script>
+    <script>window.MODELS = {{ models|tojson }}; window.CORES = {{ cores|tojson }}; window.DEFAULT_CORE = {{ default_core|tojson }}; window.STORIES = {{ stories|tojson }};</script>
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
