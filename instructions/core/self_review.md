@@ -114,32 +114,6 @@ Some downtime is necessary. The PC should not be thrust from one important decis
 
 The story plan contains pre-planned encounters of varying story importance. These are your primary tool for giving the player goals, breaking pacing ruts, and merging back into structured play after time jumps or freeform segments.
 
-## Pacing
-
-**Granularity**: how much world passes per narration turn - one spoken line at the fine end, a month in a paragraph at the coarse end.
-
-**Set granularity by what the player is doing.** While in conversation, or with a concrete goal in motion, use moment-to-moment narration. Let them execute. No goal, vague goal, or waiting gets compression: keep narrating until something concrete is in front of them, trigger a planned encounter, or jump time. Do not run everything at one speed.
-
-**Conversation runs at the finest grain.** In a live exchange, match the player line for line: their line, the NPC's reply, maybe one physical beat, stop. A turn can be eight words. Don't bundle exchanges, summarize a conversation that's still alive, or pad the reply with description the moment doesn't need. When both sides have said their piece and the player's replies go limp, close the scene and move time. Time still passes during conversation, but slower.
-
-**End your turn when the player has something to respond to.** A question pointed at the PC. An accusation. A noise from the next room. A fact that changes the picture. The opposite error is stopping where there's nothing to answer: the PC arrives at the door, and what can the player say except "I go inside"? Keep going until there's a real decision.
-
-**End before the PC acts, not after.** Stop just short of the PC's next move so the player makes it. Ending right after an action completes forces "I keep doing what I was doing," which is dead air.
-
-**Frame scenes late.** Start where the interesting thing is happening or about to happen.
-
-Some downtime is necessary. The PC should not be thrust from one important decision or action sequence to another. Good pacing calls for a lull, particularly after a drawn out sequence of story importance. This is a good opportunity to ask the player how they generally spend their time, to check in on companions, or to let a quiet conversation happen at conversation speed. Try and intuit when the player has had enough room, then put another thread in reach or let them stumble onto one.
-
-**Failure modes:**
-- Several turns of "I keep going" outside of conversation. Dialogue replies are engagement; "I continue down the road" three times is the rut.
-- Auto-success creep. If the player has been attempting things that could fail and you haven't rolled in a while, something is wrong. Turns of talk don't count against this.
-- The monologue. You wrote a speech the player would have interrupted four sentences in.
-- The plan's clock has stalled. Events that should have fired haven't.
-
-**Vary length by an order of magnitude.** A tight exchange is one line; a setpiece runs paragraphs. If your last five responses are the same length, something is wrong.
-
-The story plan may contain pre-formed encounters of varying importance. These are an important tool for handing the player goals, breaking ruts, and merging back into structure after jumps or freeform play.
-
 ---
 
 ## The Story Plan

@@ -94,7 +94,6 @@ Captured turns live in `eval_stories/{id}/`, shaped like a story (`info.json`, `
 
 - Cyberpunk RED hard system
 
-
 - blind scoring on top of the prompt studio
     - lm-arena type loop: generate turns with prompt A and prompt B, pick the preferred one of a pair without knowing which is which, show win% at the end
     - currently the columns are labelled and unscored, so it's just eyeballing
@@ -154,9 +153,23 @@ Captured turns live in `eval_stories/{id}/`, shaped like a story (`info.json`, `
         - little utility things. there aren't enough existing utility spells and even if there were, none of these are useful to justify taking them over combat/stronger spells
     - not sure if they should still use MS. leaning yes, becuase magic should be used everywhere in this system, and MS is the only thing that makes it kind of costly
 
-- dialogue writing is still downright BAD
-    - maybe have the models do a few sample lines/passages in voice as each major character?
-        - or exchanges, or full on test scenes in made up scenarios?
-    - fable just makes every character sound like fable
-    - so many kicks. both eye kicks and some other kind. rhetorical kicks?
-
+- A 'do nothing' or 'continue narrating' button is probably needed
+    - i think this would help a lot with dialogie
+    - humans do this very subtle thing of physically conveying when they want to speak
+    - and it doens't work for text
+    - this is problematic for dialogue with NPCs
+        - because either the NPC speaks in monologues, with like at minimum 2 lines/full sentences (which is significaly abnove the median for real spoken dialogie. too long)
+        - or they speak in stocatto, which would allow the player to interject, but requires a way to not interject
+        - as in currently the player is forced to act on every turn end
+        - and graunlarity leads the player to say 'keep doing the thing i was doing/do nothing' 
+            - and this is a thing the system explicitly says to not make the playter do
+            - but it really isn't that bad, so idk
+    - or more experimentally, we could do an asynchronous chat interface??
+        - as in the assistant sort of sets a timeout on it's turn end before other stuff starts happening
+        - and the user has to start typing by this point or stuff happens
+        - and alternatively, if the user starts giving input while the user is typing, this 'interrupts' the narration, which stops
+            - you could just end the assistant's turn here and switch to the user until they submit
+            - or you could like basically stream the user's input as prefill into the assistant's turn so it can literally narrate in real time
+                - like "assistant: and then she started walking down the hill where <user\_input> I get out my <\user_input> - until she suddenly takes off her pack and unzips it <user\_input> flashlight and hold it up <\user_input>", removing her flashlight and sweeping it around the trees pressed in against her"
+            - a live action text rpg
+            - hmm..
