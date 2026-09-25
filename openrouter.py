@@ -219,6 +219,30 @@ class OpenRouterStream:
     def __del__(self):
         self.close()
 
+def _mergeReasoningDetails(stored: list[dict], deltas: list[dict]) -> None:
+    """Fold one chunk's reasoning_details into the message's list. A block streams as many chunks
+    sharing an `index`: their text (or summary / encrypted data) concatenates, and every other
+    field — the signature arrives on the block's last chunk — is taken from the latest chunk that
+    carries it. The finished list goes back to the provider with the message, and a block is only
+    valid whole."""
+    for d in deltas:
+        if not isinstance(d, dict) or not d:
+            continue
+        target = None
+        if d.get("index") is not None:
+            target = next((s for s in stored if s.get("index") == d["index"]), None)
+        elif stored and stored[-1].get("index") is None and stored[-1].get("type") == d.get("type") and stored[-1].get("id") == d.get("id"):
+            target = stored[-1]  # no index to match on: a run of same-typed chunks is one block
+        if target is None:
+            stored.append(dict(d))
+            continue
+        for k, v in d.items():
+            if k in ("text", "summary", "data"):
+                if isinstance(v, str):
+                    target[k] = (target[k] if isinstance(target.get(k), str) else "") + v
+            elif v is not None or k not in target:
+                target[k] = v
+
 class OpenRouterProvider():
     def __init__(
             self,
@@ -373,6 +397,12 @@ class OpenRouterProvider():
         if self._stop.is_set():
             raise RuntimeError("stopped by the user")
 
+    def _assistantMessage(self) -> dict:
+        """The assistant message the current stream is building, started on its first chunk."""
+        if self.messages[-1]["role"] != "assistant":
+            self.messages.append({"role": "assistant", "content": "", "reasoning": "", "reasoning_details": []})
+        return self.messages[-1]
+
     def _run(self) -> str | None:
         finish_reason = None
         while True:
@@ -387,90 +417,83 @@ class OpenRouterProvider():
                 if event.get("error"):
                     raise RuntimeError(f"OpenRouter error: {_errorText(event['error'])}")
 
-                # Capture usage from the final chunk (comes after finish_reason)
+                # Usage rides on the final chunk, after finish_reason, and belongs to the assistant
+                # message this stream built. A stream that built none (an empty or errored completion)
+                # still counts toward the turn's cost, but has no message to hang it on.
                 usage = event.get("usage")
-                if usage and self.messages[-1]["role"] == "assistant":
-                    self.messages[-1]["usage"] = usage
+                if usage:
                     self.usage_history.append(usage)
+                    if self.messages[-1]["role"] == "assistant":
+                        self.messages[-1]["usage"] = usage
+                    else:
+                        logger.warning(f"usage reported for a stream that produced no assistant message: {usage}")
 
-                # Skip events without choices (e.g., usage-only final chunks)
-                choices = event.get("choices", [])
+                choices = event.get("choices") or []
                 if not choices:
                     continue
-
                 event_item = choices[0]
                 if event_item.get("error"):
                     raise RuntimeError(f"OpenRouter error: {_errorText(event_item['error'])}")
                 delta = event_item.get("delta") or {}
 
                 if delta:
-                    # Initialize assistant message on first delta
-                    if self.messages[-1]["role"] != "assistant":
-                        self.messages.append({"role": "assistant", "content": "", "reasoning": "", "reasoning_details": [{}]})
+                    msg = self._assistantMessage()
 
-                    # Handle text content
                     delta_content = delta.get("content")
                     if delta_content:
-                        self.messages[-1]["content"] += delta_content
+                        msg["content"] += delta_content
                         self.cb.text_output(text=delta_content)
 
-                    # Handle reasoning (supports multiple formats)
-                    # Anthropic models send reasoning in both delta.reasoning AND delta.reasoning_details
-                    # We must use one OR the other, not both, to avoid duplication
+                    # Reasoning comes in one of two shapes. delta.reasoning_details is a list of
+                    # blocks, each streamed as many chunks sharing an index, and it goes back to the
+                    # provider with the message, so it is merged rather than replaced. Anthropic
+                    # models send it AND delta.reasoning, so the text is taken from one or the other.
                     reasoning_delta = None
-                    reasoning_details = delta.get("reasoning_details", [])
-
-                    if reasoning_details and isinstance(reasoning_details, list):
-                        for detail in reasoning_details:
-                            if isinstance(detail, dict):
-                                detail_text = detail.get("text")
-                                if detail_text:
-                                    reasoning_delta = (reasoning_delta or "") + detail_text
-                                elif detail.get("type") == "reasoning.summary":
-                                    summary = detail.get("summary")
-                                    if summary:
-                                        reasoning_delta = (reasoning_delta or "") + summary
-
-                        if reasoning_details != [{}]:
-                            self.messages[-1]["reasoning_details"] = reasoning_details
-
-                    # Only fall back to delta.reasoning if reasoning_details didn't provide content
+                    details = delta.get("reasoning_details")
+                    if isinstance(details, list) and details:
+                        for detail in details:
+                            if not isinstance(detail, dict):
+                                continue
+                            text = detail.get("text") or (detail.get("summary") if detail.get("type") == "reasoning.summary" else None)
+                            if text:
+                                reasoning_delta = (reasoning_delta or "") + text
+                        _mergeReasoningDetails(msg["reasoning_details"], details)
                     if reasoning_delta is None:
                         reasoning_delta = delta.get("reasoning")
-
                     if reasoning_delta:
-                        self.messages[-1]["reasoning"] += reasoning_delta
+                        msg["reasoning"] += reasoning_delta
                         self.cb.think_output(text=reasoning_delta)
 
-                    # Handle tool calls
-                    tool_calls = delta.get("tool_calls", [])
-                    for tool_call in tool_calls:
-                        if "id" in tool_call:
-                            if "tool_calls" not in self.messages[-1]:
-                                self.messages[-1]["tool_calls"] = []
-                            self.messages[-1]["tool_calls"].append(tool_call)
-                            self.cb.tool_request(name=tool_call["function"]["name"], inputs={})
-                        self.messages[-1]["tool_calls"][-1]["function"]["arguments"] += tool_call["function"]["arguments"]
+                    for tool_call in delta.get("tool_calls") or []:
+                        fn = tool_call.get("function") or {}
+                        if tool_call.get("id"):
+                            # A new call. Stored as its own dict, not the chunk's, so the argument
+                            # fragments below append to our copy: a provider may send the whole call,
+                            # arguments included, in this one chunk, and they must count once.
+                            stored = {**tool_call, "function": {**fn, "arguments": fn.get("arguments") or ""}}
+                            msg.setdefault("tool_calls", []).append(stored)
+                            self.cb.tool_request(name=fn.get("name", ""), inputs={})
+                        elif fn.get("arguments"):
+                            msg["tool_calls"][-1]["function"]["arguments"] += fn["arguments"]
 
-                # Handle finish reasons. Checked whether or not the chunk carried a delta: the final
+                # Handle the finish reason. Checked whether or not the chunk carried a delta: the final
                 # chunk of a response may be an empty delta with just the finish_reason on it.
-                finish_reason = event_item.get("finish_reason")
-                if finish_reason:
-                    if finish_reason == "error":
+                finish = event_item.get("finish_reason")
+                if finish:
+                    if finish == "error":
                         raise RuntimeError("OpenRouter reported the response as errored")
-                    round_finish = finish_reason
-                    if self.messages[-1]["role"] == "assistant":
-                        # Check for non-streamed reasoning in final message
-                        final_reasoning = event_item.get("message", {}).get("reasoning") or delta.get("reasoning")
-                        if final_reasoning and not self.messages[-1].get("reasoning"):
-                            self.messages[-1]["reasoning"] = final_reasoning
-                            self.cb.think_output(text=final_reasoning)
-                        # Detect tool calls from message content, not finish_reason string
-                        if self.messages[-1].get("tool_calls"):
-                            pending_tool_calls = True
-                    if finish_reason not in ("stop", "tool_calls", "end_turn", "tool_use"):
-                        logger.warning(f"Unexpected finish_reason: {finish_reason}")
-                    continue  # Continue to catch usage chunk
+                    round_finish = finish
+                    # Check for non-streamed reasoning in final message
+                    final_reasoning = (event_item.get("message") or {}).get("reasoning") or delta.get("reasoning")
+                    if final_reasoning and not self.messages[-1].get("reasoning"):
+                        msg = self._assistantMessage()
+                        msg["reasoning"] = final_reasoning
+                        self.cb.think_output(text=final_reasoning)
+                    # Detect tool calls from message content, not finish_reason string
+                    if self.messages[-1].get("tool_calls"):
+                        pending_tool_calls = True
+                    if finish not in ("stop", "tool_calls", "end_turn", "tool_use"):
+                        logger.warning(f"Unexpected finish_reason: {finish}")
 
             stream.close()
             self._stream = None

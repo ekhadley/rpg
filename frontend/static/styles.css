@@ -2427,6 +2427,14 @@ html, body {
     opacity: 1;
 }
 
+/* The floating surface: side popups and the toast share it, so the look is set once. */
+.side-popup,
+.toast {
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
 /* Side popup (non-modal, anchored next to its trigger) */
 .side-popup {
     position: fixed;
@@ -2434,9 +2442,6 @@ html, body {
     display: none;
     flex-direction: column;
     width: 336px;
-    background: var(--bg-deep);
-    border: 1px solid var(--border);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
 .side-popup.show {
@@ -3281,7 +3286,7 @@ html, body {
     margin-bottom: 10px;
 }
 
-.studio-title-row h5 { margin: 0; color: var(--text-bright); font-size: 1.1rem; }
+.studio-title-row h5 { margin: 0; color: var(--text-bright); font-size: 1.1rem; text-wrap: balance; }
 
 /* The selected turn, read as a subtitle off the fixed title; the cost sits at the far right. */
 .studio-turn-name {
@@ -3354,9 +3359,10 @@ html, body {
     text-wrap: pretty;
 }
 
-/* Fixed width so the box doesn't resize with whichever run is selected; the menu still opens full width. */
+/* Fixed width so the box doesn't resize with whichever run is selected. A long label is cut at the
+   box edge (a select can't ellipsize), but the menu still opens full width. */
 .studio-controls .studio-history-field { margin-left: auto; }
-.studio-controls .studio-history { width: 220px; color: var(--text-muted); cursor: pointer; text-overflow: ellipsis; }
+.studio-controls .studio-history { width: 220px; color: var(--text-muted); cursor: pointer; }
 .studio-history:disabled { opacity: 0.5; cursor: default; }
 
 .studio-run-btn {
@@ -3374,9 +3380,9 @@ html, body {
 .studio-run-btn:active:not(:disabled) { transform: scale(0.96); }
 .studio-run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* Empty state before a turn is picked (or after one is, before its first run). */
+/* Empty state; the text is set by studio.js, since it differs before and after a turn is picked. */
 .studio-columns:empty::before {
-    content: 'Select a captured turn from the sidebar, then Generate.';
+    content: attr(data-empty);
     grid-column: 1 / -1;
     padding: 40px 0;
     text-align: center;
@@ -3448,7 +3454,7 @@ html, body {
 
 .capture-button.captured { color: var(--accent); }
 
-/* Transient notice, top center; fades in and out via opacity. */
+/* Transient notice, top center; fades in and out via opacity. Surface shared with .side-popup above. */
 .toast {
     position: fixed;
     top: 16px;
@@ -3456,10 +3462,7 @@ html, body {
     transform: translateX(-50%);
     z-index: 2100;
     padding: 7px 12px;
-    background: var(--bg-deep);
     color: var(--text-bright);
-    border: 1px solid var(--border);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     font-size: 0.82rem;
     opacity: 0;
     pointer-events: none;

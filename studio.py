@@ -48,8 +48,13 @@ def _turnContext(eval_id: str) -> tuple[dict, list[dict], dict[str, str]]:
     assert parent is not None, f"captured turn {eval_id} has no user message to respond to"
     return info, tree.messages_to(parent), tree.file_state_at(parent)
 
-def _saveRun(cfg: dict, lanes: dict) -> str:
-    runs_dir = f"{_evalDir(cfg['eval_id'])}/runs"
+def _saveRun(cfg: dict, lanes: dict) -> str | None:
+    """Write a finished run under its turn's runs/ folder. None if the turn was deleted while the
+    run was in flight — recreating its directory would leave a turn with runs but no info.json."""
+    eval_dir = _evalDir(cfg['eval_id'])
+    if not os.path.isdir(eval_dir):
+        return None
+    runs_dir = f"{eval_dir}/runs"
     os.makedirs(runs_dir, exist_ok=True)
     path = f"{runs_dir}/{cfg['started'].replace(':', '-')}.json"
     with open(path, "w") as f:
@@ -69,6 +74,18 @@ def listRuns(eval_id: str) -> list[dict]:
                      "cost": sum(l["cost"] for l in run["lanes"].values())})
     return sorted(runs, key=lambda r: r["started"], reverse=True)
 
+def _toolInputs(arguments: str) -> dict | str:
+    """A saved tool call's arguments as the dict the live run showed. Reads the first JSON object
+    when the string carries more than one — runs saved before the streaming loop stopped doubling
+    single-chunk arguments — and hands back the raw string if it isn't JSON at all."""
+    try:
+        return json.loads(arguments)
+    except json.JSONDecodeError:
+        try:
+            return json.JSONDecoder().raw_decode(arguments)[0]
+        except json.JSONDecodeError:
+            return arguments
+
 def _replayEvents(messages: list[dict]) -> list[dict]:
     """Flatten one lane's saved provider messages into the same ordered stream the live run emits:
     reasoning, narration, and tool calls paired back up with their results."""
@@ -83,7 +100,7 @@ def _replayEvents(messages: list[dict]) -> list[dict]:
             events.append({"kind": "text", "text": content})
         for call in msg.get("tool_calls") or []:
             events.append({"kind": "tool", "name": call["function"]["name"],
-                           "inputs": json.loads(call["function"]["arguments"]),
+                           "inputs": _toolInputs(call["function"]["arguments"]),
                            "result": results.get(call["id"], "")})
     return events
 
@@ -102,8 +119,8 @@ def _runLane(socket: SocketIO, cfg: dict, lane: str, arm: dict, prefix: list[dic
     if gate is not None and not is_primer:
         gate.wait()
     files = dict(before)  # this lane's own copy — the file tools mutate it during the run
-    # A lane that fails still reports in, so the run completes and the failure is visible in its
-    # column rather than leaving the run hanging on a lane that will never finish.
+    # Whatever goes wrong, the lane must still be counted, or the run never ends and the client
+    # waits on it forever. A failure is recorded on the lane and shown in its column.
     error, messages, cost = None, [], 0.0
     try:
         tb = SYSTEM_TOOLBOXES[cfg["system"]](files)
@@ -121,10 +138,10 @@ def _runLane(socket: SocketIO, cfg: dict, lane: str, arm: dict, prefix: list[dic
         provider.messages = [{"role": "system", "content": [block]}] + prefix
         provider.run()
         messages, cost = provider.messages[len(prefix) + 1:], provider.getCostStats()["total_cost"]
-    except TurnFailed as e:
+    except TurnFailed as e:  # a refused request, a broken stream, an error streamed mid-response (logged by the provider)
         error = str(e)
     except Exception as e:  # a bad arm (missing core version, unknown system) or anything unexpected
-        logger.error(f"studio lane {lane} failed: {e}", exc_info=True)
+        logger.error(f"studio lane {lane} of run {cfg['run_id']} failed: {e}", exc_info=True)
         error = str(e)
     finally:
         if is_primer and gate is not None:
@@ -136,8 +153,11 @@ def _runLane(socket: SocketIO, cfg: dict, lane: str, arm: dict, prefix: list[dic
         done = len(state["lanes"]) == state["total"]
     if done:
         path = _saveRun(cfg, state["lanes"])
-        logger.info(f"studio run {cfg['run_id']} complete → {path}")
-        socket.emit('studio_run_end', {"run_id": cfg["run_id"], "path": path,
+        if path:
+            logger.info(f"studio run {cfg['run_id']} complete → {path}")
+        else:
+            logger.warning(f"studio run {cfg['run_id']} complete, but its turn {cfg['eval_id']} was deleted mid-run: not saved")
+        socket.emit('studio_run_end', {"run_id": cfg["run_id"], "eval_id": cfg["eval_id"], "path": path, "saved": path is not None,
                                        "cost": sum(l["cost"] for l in state["lanes"].values())})
 
 def runStudio(socket: SocketIO, eval_id: str, arms: list[dict], n: int, cache: bool) -> str:

@@ -70,24 +70,15 @@ INSTRUCTIONS_DIR = "instructions"
 CORE_DIR = f"{INSTRUCTIONS_DIR}/core"        # one file per core version, freely named
 SYSTEMS_DIR = f"{INSTRUCTIONS_DIR}/systems"  # one file per game system
 
-# The narrator models offered in every model picker. Editable from the settings popup;
-# the file is written on every edit and seeded from DEFAULT_MODELS when missing.
+# The narrator models offered in every model picker. The settings popup rewrites the file on every
+# edit, and it is checked in, so it is the only copy of the list: a checkout without it starts with
+# an empty list to be filled from the settings popup.
 MODELS_FILE = "models.json"
-DEFAULT_MODELS = [
-    "anthropic/claude-fable-5",
-    "anthropic/claude-opus-5",
-    "anthropic/claude-haiku-4.5",
-    "openai/gpt-5.5",
-    "openai/gpt-5.5-pro",
-    "openai/gpt-4o-mini",
-    "google/gemini-3.1-pro-preview",
-    "google/gemini-3.5-flash",
-    "moonshotai/kimi-k2.5",
-]
 
 def loadModels() -> list[str]:
     if not os.path.exists(MODELS_FILE):
-        saveModels(DEFAULT_MODELS)
+        logger.warning(f"{MODELS_FILE} not found: the model list starts empty; add models in the settings popup")
+        return []
     with open(MODELS_FILE) as f:
         return json.load(f)
 
@@ -128,6 +119,18 @@ def systemInstructionFile(system_name: str) -> str:
 def listCoreVersions() -> list[str]:
     """The core versions a story can be created with (the settings + New Story pickers)."""
     return sorted(f[:-3] for f in os.listdir(CORE_DIR) if f.endswith(".md") and not f.startswith("_"))
+
+# The core version that stands in wherever none has been chosen: a browser's settings before the
+# user picks one, arm A of a studio run, and the server's fallback for stories written before core
+# became a per-story choice. Pinned by name, so adding a core file can't move it.
+DEFAULT_CORE = "no_review"
+
+def defaultCoreVersion() -> str:
+    versions = listCoreVersions()
+    if DEFAULT_CORE in versions:
+        return DEFAULT_CORE
+    logger.warning(f"default core version '{DEFAULT_CORE}' has no file under {CORE_DIR}/; using '{versions[0]}'")
+    return versions[0]
 
 def isValidGameSystem(system_name: str) -> bool:
     """Public validator to ensure the requested system has the required assets."""
