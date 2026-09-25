@@ -1,6 +1,7 @@
 import { socket } from './state.js';
 import { ensureLiveWrapper, appendReasoning, appendTool, appendDice, closeRows } from './reasoningRow.js';
 import { appendNarration, renderStreamedNarration } from './chat.js';
+import { showToast } from './ui.js';
 
 // The prompt studio: pick a captured turn, regenerate it under two arms at once — an arm being a
 // model plus a core-instruction version — and read the results side by side. Lanes stream through
@@ -77,7 +78,7 @@ function renderEvalTurns(turns) {
         li.addEventListener('click', () => selectTurn(t));
         li.querySelector('.eval-turn-delete').addEventListener('click', (e) => {
             e.stopPropagation();
-            if (selectedTurn === t.id) selectedTurn = null;
+            if (selectedTurn === t.id) clearTurn();
             socket.emit('delete_eval_turn', { id: t.id });
         });
         evalTurnList.appendChild(li);
@@ -118,9 +119,21 @@ function pickModel(sel, model) {
     sel.value = model;
 }
 
+function clearTurn() {
+    selectedTurn = null;
+    studioTurnName.textContent = 'no turn selected';
+    studioRunBtn.disabled = true;
+    studioRunBtn.title = 'Select a captured turn first';
+    studioColumns.innerHTML = '';
+    studioCost.textContent = '';
+    renderRunHistory([]);
+}
+
 function selectTurn(turn) {
     selectedTurn = turn.id;
     studioTurnName.textContent = turn.name;
+    studioRunBtn.disabled = false;
+    studioRunBtn.title = '';
     socket.emit('list_studio_runs', { eval_id: turn.id });
     pickModel(modelASel, turn.model);
     pickModel(modelBSel, turn.model);
@@ -177,7 +190,7 @@ function finishLane(lane, cost) {
 }
 
 function setRunning(running) {
-    studioRunBtn.disabled = running;
+    studioRunBtn.disabled = running || !selectedTurn;
     historySel.disabled = running;
 }
 
@@ -225,7 +238,10 @@ export function initStudio() {
     });
 
     socket.on('eval_turns', renderEvalTurns);
-    socket.on('eval_turn_captured', () => socket.emit('list_eval_turns'));
+    socket.on('eval_turn_captured', (d) => {
+        showToast('Captured "' + d.name + '" for the studio');
+        socket.emit('list_eval_turns');
+    });
 
     socket.on('studio_options', function(data) {
         if (!modelASel.options.length) options(modelASel, data.models, data.models[1]);

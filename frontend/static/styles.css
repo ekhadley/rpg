@@ -3209,12 +3209,22 @@ html, body {
 .studio-title-row {
     display: flex;
     align-items: baseline;
-    justify-content: space-between;
     gap: 12px;
     margin-bottom: 10px;
 }
 
-.studio-title-row h5 { margin: 0; color: var(--text-bright); font-size: 1.1rem; text-wrap: balance; }
+.studio-title-row h5 { margin: 0; color: var(--text-bright); font-size: 1.1rem; }
+
+/* The selected turn, read as a subtitle off the fixed title; the cost sits at the far right. */
+.studio-turn-name {
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    padding-left: 12px;
+    border-left: 1px solid var(--border);
+    text-wrap: pretty;
+}
+
+.studio-title-row .studio-cost { margin-left: auto; }
 
 .studio-cost {
     color: var(--text-muted);
@@ -3276,20 +3286,10 @@ html, body {
     text-wrap: pretty;
 }
 
-.studio-history {
-    background-color: var(--bg);
-    color: var(--text-muted);
-    border: 1px solid var(--border);
-    padding: 4px 6px;
-    max-width: 340px;
-    font-family: var(--font-primary);
-    font-size: 0.74rem;
-    cursor: pointer;
-}
-
+/* Fixed width so the box doesn't resize with whichever run is selected; the menu still opens full width. */
+.studio-controls .studio-history-field { margin-left: auto; }
+.studio-controls .studio-history { width: 220px; color: var(--text-muted); cursor: pointer; text-overflow: ellipsis; }
 .studio-history:disabled { opacity: 0.5; cursor: default; }
-
-.studio-title-row .studio-history { margin-right: auto; }
 
 .studio-run-btn {
     background-color: var(--accent);
@@ -3302,9 +3302,19 @@ html, body {
     transition: background-color 0.15s;
 }
 
-.studio-run-btn:hover { background-color: var(--accent-hover); }
-.studio-run-btn:active { transform: scale(0.96); }
-.studio-run-btn:disabled { opacity: 0.5; cursor: default; }
+.studio-run-btn:hover:not(:disabled) { background-color: var(--accent-hover); }
+.studio-run-btn:active:not(:disabled) { transform: scale(0.96); }
+.studio-run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Empty state before a turn is picked (or after one is, before its first run). */
+.studio-columns:empty::before {
+    content: 'Select a captured turn from the sidebar, then Generate.';
+    grid-column: 1 / -1;
+    padding: 40px 0;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.86rem;
+}
 
 .studio-columns {
     flex: 1;
@@ -3368,3 +3378,23 @@ html, body {
 .studio-lane-body .message-actions { display: none; }
 
 .capture-button.captured { color: var(--accent); }
+
+/* Transient notice, top center; fades in and out via opacity. */
+.toast {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2100;
+    padding: 7px 12px;
+    background: var(--bg-deep);
+    color: var(--text-bright);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    font-size: 0.82rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+}
+
+.toast.show { opacity: 1; }

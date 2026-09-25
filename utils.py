@@ -320,9 +320,10 @@ def copyStory(source_story_id: str, new_name: str, new_model_name: str, mode: st
     new_dir = f"./{STORIES_ROOT_DIR}/{new_story_id}"
     os.makedirs(new_dir)
     source_info = loadStoryInfo(source_story_id)
+    source_system = source_info.get('system', 'hp')
     with open(os.path.join(new_dir, "info.json"), "w") as f:
         json.dump({
-            "system": source_info.get('system', 'hp'),
+            "system": source_system,
             "core": source_info.get('core'),
             "model": new_model_name,
             "story_name": new_name,

@@ -334,12 +334,7 @@ class OpenRouterProvider():
 
                 # Initialize assistant message on first delta
                 if self.messages[-1]["role"] != "assistant":
-                    self.messages.append(copy.deepcopy(delta))
-                    if "tool_calls" in delta:
-                        self.messages[-1]["tool_calls"] = []
-                    self.messages[-1]["reasoning"] = ""
-                    self.messages[-1]["reasoning_details"] = [{}]
-                    self.messages[-1]["content"] = self.messages[-1].get("content") or ""
+                    self.messages.append({"role": "assistant", "content": "", "reasoning": "", "reasoning_details": [{}]})
 
                 # Handle text content
                 delta_content = delta.get("content")

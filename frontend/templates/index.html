@@ -85,8 +85,8 @@
         <div class="studio-wrapper" id="studio-wrapper" style="display: none;">
             <div class="studio-header">
                 <div class="studio-title-row">
-                    <h5 id="studio-turn-name">Select a captured turn</h5>
-                    <select class="studio-history" id="studio-history"></select>
+                    <h5>Prompt Studio</h5>
+                    <span class="studio-turn-name" id="studio-turn-name">no turn selected</span>
                     <span class="studio-cost" id="studio-cost"></span>
                 </div>
                 <div class="studio-controls" id="studio-controls">
@@ -108,10 +108,13 @@
                     <label class="studio-check custom-checkbox">
                         <input type="checkbox" id="studio-cache"><span class="checkmark"></span>Cache
                     </label>
-                    <button class="studio-run-btn" id="studio-run-btn">
+                    <button class="studio-run-btn" id="studio-run-btn" disabled title="Select a captured turn first">
                         <i class="fas fa-play"></i> Generate
                     </button>
                     <span class="studio-warning" id="studio-warning"></span>
+                    <label class="studio-history-field">Past runs
+                        <select class="studio-history" id="studio-history"></select>
+                    </label>
                 </div>
             </div>
             <div class="studio-columns" id="studio-columns"></div>
@@ -413,6 +416,8 @@
             <button class="btn btn-primary" id="confirm-popup-confirm">Confirm</button>
         </div>
     </div>
+
+    <div id="toast" class="toast"></div>
 
     <div id="error-popup" class="side-popup confirm-popup">
         <div class="confirm-popup-body">

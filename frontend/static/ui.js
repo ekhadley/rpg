@@ -269,6 +269,16 @@ export function showErrorPopup(message) {
     popup.style.top = '80px';
 }
 
+// Transient notice for something that happened off-screen (e.g. a turn captured into the studio list).
+let toastTimer = null;
+export function showToast(message) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
 export function initErrorPopup() {
     const popup = document.getElementById('error-popup');
     document.getElementById('error-popup-ok').addEventListener('click', () => popup.classList.remove('show'));
