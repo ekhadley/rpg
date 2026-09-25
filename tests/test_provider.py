@@ -157,3 +157,35 @@ def test_a_stopped_provider_runs_again_cleanly():
         p.run()
     p.run()
     assert p.messages[-1]["content"] == "fine" and p.cb.ends == ["aborted", "stop"]
+
+
+# --- parsing fixes that the failure handling above must not undo -----------------------------
+
+def test_a_tool_call_sent_whole_in_one_chunk_keeps_its_arguments_once():
+    call = {"id": "c1", "type": "function", "function": {"name": "roll_dice", "arguments": '{"dice": "d20"}'}}
+    p = make_provider([[delta(role="assistant", tool_calls=[call]), finish("tool_calls"), USAGE],
+                       [delta(content="ok"), finish("stop"), USAGE]])
+    p.run()
+    assert p.messages[2]["tool_calls"][0]["function"]["arguments"] == '{"dice": "d20"}'
+    assert call["function"]["arguments"] == '{"dice": "d20"}'  # the chunk's own dict is left alone
+    assert p.cb.tools[0][:2] == ("roll_dice", {"dice": "d20"})
+
+
+def test_reasoning_details_blocks_are_merged_by_index_across_chunks():
+    p = make_provider([[delta(reasoning_details=[{"type": "reasoning.text", "index": 0, "text": "thin"}]),
+                        delta(reasoning_details=[{"type": "reasoning.text", "index": 0, "text": "king", "signature": "sig"}]),
+                        delta(reasoning_details=[{"type": "reasoning.text", "index": 1, "text": "second"}]),
+                        delta(content="x"), finish("stop"), USAGE]])
+    p.run()
+    assert p.messages[-1]["reasoning_details"] == [
+        {"type": "reasoning.text", "index": 0, "text": "thinking", "signature": "sig"},
+        {"type": "reasoning.text", "index": 1, "text": "second"},
+    ]
+    assert p.messages[-1]["reasoning"] == "thinkingsecond" and p.cb.thoughts == ["thin", "king", "second"]
+
+
+def test_usage_from_a_stream_with_no_assistant_message_is_counted_but_not_misattributed():
+    p = make_provider([[finish("stop"), USAGE]])
+    p.run()
+    assert [m["role"] for m in p.messages] == ["system", "user"] and "usage" not in p.messages[-1]
+    assert p.usage_history == [USAGE["usage"]] and p.last_turn_cost == pytest.approx(0.002)
