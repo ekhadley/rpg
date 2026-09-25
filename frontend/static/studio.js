@@ -181,12 +181,19 @@ function laneEl(lane) {
     return laneWrappers[lane] ? laneWrappers[lane].closest('.studio-lane') : null;
 }
 
-function finishLane(lane, cost) {
+function finishLane(lane, cost, error) {
     if (!laneWrappers[lane]) return;
     closeRows(laneWrappers[lane]);
     const el = laneEl(lane);
     el.classList.remove('running');
-    el.querySelector('.studio-lane-status').textContent = '$' + cost.toFixed(3);
+    const status = el.querySelector('.studio-lane-status');
+    if (error) {
+        el.classList.add('failed');
+        status.textContent = 'failed';
+        status.title = error;
+    } else {
+        status.textContent = '$' + cost.toFixed(3);
+    }
 }
 
 function setRunning(running) {
@@ -272,7 +279,7 @@ export function initStudio() {
         buildColumns(run);
         for (const [lane, l] of Object.entries(run.lanes)) {
             replayLane(lane, l.events);
-            finishLane(lane, l.cost);
+            finishLane(lane, l.cost, l.error);
         }
         studioCost.textContent = 'run total $' + Object.values(run.lanes).reduce((s, l) => s + l.cost, 0).toFixed(3);
     });
@@ -305,7 +312,7 @@ export function initStudio() {
 
     socket.on('studio_lane_end', function(d) {
         if (d.run_id !== activeRunId) return;
-        finishLane(d.lane, d.cost);
+        finishLane(d.lane, d.cost, d.error);
     });
 
     socket.on('studio_run_end', function(d) {

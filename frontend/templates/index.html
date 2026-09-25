@@ -139,13 +139,17 @@
 
                 <div class="input-area">
                     <form id="message-form">
-                        <input 
-                            type="text" 
-                            id="user-input" 
-                            class="form-control" 
-                            placeholder="" 
+                        <input
+                            type="text"
+                            id="user-input"
+                            class="form-control"
+                            placeholder=""
                             autocomplete="off"
                         >
+                        <!-- Shown only while a turn is running (the input is disabled); discards the turn -->
+                        <button type="button" id="stop-button" class="stop-button" title="Stop this turn (discards it)">
+                            <i class="fas fa-stop"></i>
+                        </button>
                     </form>
                 </div>
             </div>

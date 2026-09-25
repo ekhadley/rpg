@@ -1733,7 +1733,41 @@ body {
     display: flex;
     align-items: center;
     flex: 1;
+    position: relative;
 }
+
+/* Stop button: sits at the right edge of the input line, only while a turn is in flight (the
+   input is disabled for exactly that window), so the centered input text never shifts. */
+.stop-button {
+    display: none;
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    font-size: 0.7rem;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: color, background-color, opacity;
+    transition-duration: 0.15s;
+}
+
+#message-form:has(#user-input:disabled) .stop-button { display: flex; }
+
+.stop-button:hover {
+    opacity: 1;
+    color: var(--text-bright);
+    background: var(--bg-alt);
+}
+
+.stop-button:active { transform: translateY(-50%) scale(0.96); }
 
 #user-input {
     background-color: transparent;
@@ -3102,15 +3136,49 @@ html, body {
 .debug-separator::before { margin-right: 12px; }
 .debug-separator::after { margin-left: 12px; }
 
-.debug-files {
+.debug-files-header {
     padding: 4px 16px 8px;
     color: var(--accent);
     font-size: 0.72rem;
     font-family: var(--font-mono, monospace);
     opacity: 0.85;
+    cursor: pointer;
+    transition: opacity 0.15s;
 }
 
-.debug-files i { margin-right: 6px; }
+.debug-files-header:hover { opacity: 1; }
+
+.debug-files-header i { margin-right: 6px; }
+
+/* Per-entry unified diffs, revealed by clicking the marker */
+.debug-files-body {
+    display: none;
+    padding: 0 16px 12px 16px;
+    background-color: var(--bg-alt);
+}
+
+.debug-files.expanded .debug-files-body { display: block; }
+
+.debug-diff {
+    margin: 0;
+    padding: 10px 12px;
+    background: var(--bg-deep);
+    font-size: 0.74rem;
+    font-family: 'Consolas', 'Monaco', monospace;
+    color: var(--text-normal);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 320px;
+    overflow-y: auto;
+    line-height: 1.45;
+}
+
+.debug-diff + .debug-diff { margin-top: 8px; }
+
+.debug-diff .diff-add { color: var(--success); }
+.debug-diff .diff-del { color: var(--danger); }
+.debug-diff .diff-hunk { color: var(--accent); opacity: 0.8; }
+.debug-diff .diff-meta { color: var(--text-muted); }
 /* === Prompt Studio ====================================================== */
 
 .mode-toggle {
@@ -3365,6 +3433,7 @@ html, body {
 
 /* Spinner sits beside the lane number; the cost stays pinned to the far edge. */
 .studio-lane-status { margin-left: auto; font-variant-numeric: tabular-nums; }
+.studio-lane.failed .studio-lane-status { color: var(--danger); cursor: help; }
 .studio-lane:not(.running) .studio-lane-spinner { display: none; }
 
 .studio-lane-body {

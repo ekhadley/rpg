@@ -3,6 +3,7 @@ import re
 import json
 import uuid
 import shutil
+import difflib
 import logging
 from datetime import datetime
 from history import TurnTree
@@ -96,6 +97,15 @@ def saveModels(models: list[str]) -> None:
 
 def listStoryIds() -> list[str]:
     return sorted(f for f in os.listdir("./stories") if not f.startswith('.'))
+
+def unifiedDiff(name: str, before: str, after: str, context: int = 2) -> str:
+    """A unified diff of one story-context entry across a turn (what the debug viewer shows under a
+    turn's changed-files marker). A created entry diffs from empty, a deleted one to empty."""
+    lines = difflib.unified_diff(
+        before.splitlines(), after.splitlines(),
+        fromfile=f"{name} (before)", tofile=f"{name} (after)", n=context, lineterm="",
+    )
+    return "\n".join(lines)
 
 def readMarkdown(path: str) -> str:
     """Read a markdown file off disk with `<!-- comments -->` stripped out. A comment takes any

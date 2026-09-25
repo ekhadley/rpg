@@ -3,6 +3,7 @@ import json
 import requests
 import copy
 import os
+import threading
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -18,6 +19,31 @@ CACHE_CONTROLS = {
     "5m": {"type": "ephemeral"},
     "1h": {"type": "ephemeral", "ttl": "1h"},
 }
+
+# Seconds to establish the connection, and seconds without a single byte before a stream is given up
+# as hung. OpenRouter sends keepalive comments while the upstream model is still thinking, so a
+# healthy stream never goes quiet for long.
+CONNECT_TIMEOUT = 30
+READ_TIMEOUT = 180
+
+class TurnFailed(Exception):
+    """A model turn that did not complete: the request was refused, the stream broke or hung, the
+    provider sent an error mid-response, or the user stopped it. By the time this is raised the
+    provider has already dropped the turn's partial messages, so nothing half-finished (an assistant
+    message cut off mid-text, a tool call with no result) survives. `aborted` marks a user stop."""
+    def __init__(self, message: str, aborted: bool = False):
+        super().__init__(message)
+        self.aborted = aborted
+
+def _errorText(err) -> str:
+    """The message out of an OpenRouter error object (`{"code": .., "message": .., "metadata": ..}`)."""
+    if not isinstance(err, dict):
+        return str(err)
+    text = err.get("message") or json.dumps(err)
+    raw = (err.get("metadata") or {}).get("raw")
+    if raw and raw not in text:
+        text = f"{text} ({raw})"
+    return f"{text} [{err['code']}]" if err.get("code") else text
 
 class OpenRouterStream:
     """
@@ -55,7 +81,8 @@ class OpenRouterStream:
                 "provider": {"only": ["anthropic"]} if "claude" in model_name.lower() else None,
                 "stream": True
             },
-            stream = True
+            stream = True,
+            timeout = (CONNECT_TIMEOUT, READ_TIMEOUT),
         )
         if self.response_stream.status_code != 200:
             error_msg = self.response_stream.text.replace("\\n ", "\n ").replace("\\\"", "\"")
@@ -183,8 +210,12 @@ class OpenRouterStream:
                 continue
     
     def close(self):
-        self.response_stream.close()
-    
+        # Safe to call from another thread (a stop) and before the request was made (a refused
+        # connection, which leaves no response_stream behind).
+        stream = getattr(self, "response_stream", None)
+        if stream is not None:
+            stream.close()
+
     def __del__(self):
         self.close()
 
@@ -211,6 +242,8 @@ class OpenRouterProvider():
         self.usage_history: list[dict] = []  # Track usage per turn
         self.system_turn_entries: int = 0  # Number of usage entries from the initial system turn
         self.last_turn_cost: float = 0.0
+        self._stop = threading.Event()  # set by stop(); checked between events and tool rounds
+        self._stream: OpenRouterStream | None = None  # the stream in flight, so stop() can close it
 
     def getCostStats(self) -> dict:
         """Calculate cost statistics from usage history"""
@@ -295,30 +328,68 @@ class OpenRouterProvider():
             key = self.key
         )
 
+    def stop(self) -> None:
+        """Abort the turn in progress, from any thread. The stream loop sees the flag at its next
+        event and fails the turn there; closing the response helps a read that is blocked on the
+        socket get there sooner. OpenRouter keeps a quiet stream alive with comment lines every few
+        seconds, so the stop lands within seconds at worst."""
+        self._stop.set()
+        if self._stream is not None:
+            self._stream.close()
+
     def run(self, system_turn=False) -> None:
+        """Run the model until it stops calling tools.
+
+        A turn either completes or is discarded whole: on any failure (a refused request, a broken or
+        hung stream, an error the provider streams mid-response, a stop() from the user) the messages
+        this call added are dropped, so no cut-off assistant message or tool call without a result is
+        ever kept, turn_end is still reported to the callback handler so the client unlocks, and
+        TurnFailed is raised for the caller to reset whatever else the turn touched."""
+        start = len(self.messages)
         turn_start = len(self.usage_history)
-        finish_reason = None
+        self._stop.clear()
         try:
             finish_reason = self._run()
         except Exception as e:
-            logger.error(f"Error during model response: {e}", exc_info=True)
-            finish_reason = "error"
+            del self.messages[start:]
+            del self.usage_history[turn_start:]
+            self.last_turn_cost = 0.0
+            aborted = self._stop.is_set()
+            if aborted:
+                logger.info("turn stopped by the user")
+            else:
+                logger.error(f"Error during model response: {e}", exc_info=True)
+            self.cb.turn_end(cost_stats=self.getCostStats(), finish_reason="aborted" if aborted else "error")
+            raise TurnFailed("Turn stopped." if aborted else str(e), aborted=aborted) from e
+        finally:
+            self._stream = None
         turn_entries = self.usage_history[turn_start:]
         self.last_turn_cost = sum(u.get("cost", 0.0) for u in turn_entries)
         if system_turn:
             self.system_turn_entries = len(turn_entries)
         self.cb.turn_end(cost_stats=self.getCostStats(), finish_reason=finish_reason)
 
+    def _checkStopped(self) -> None:
+        if self._stop.is_set():
+            raise RuntimeError("stopped by the user")
+
     def _run(self) -> str | None:
         finish_reason = None
         while True:
+            self._checkStopped()  # a stop pressed while the previous round's tools ran
             pending_tool_calls = False
+            round_finish = None  # the finish_reason this stream ended with; None means it never finished
             stream = self.getStream()
+            self._stream = stream
 
             for event in stream:
+                self._checkStopped()
+                if event.get("error"):
+                    raise RuntimeError(f"OpenRouter error: {_errorText(event['error'])}")
+
                 # Capture usage from the final chunk (comes after finish_reason)
                 usage = event.get("usage")
-                if usage:
+                if usage and self.messages[-1]["role"] == "assistant":
                     self.messages[-1]["usage"] = usage
                     self.usage_history.append(usage)
 
@@ -328,74 +399,85 @@ class OpenRouterProvider():
                     continue
 
                 event_item = choices[0]
-                delta = event_item.get("delta", {})
-                if not delta:
-                    continue
+                if event_item.get("error"):
+                    raise RuntimeError(f"OpenRouter error: {_errorText(event_item['error'])}")
+                delta = event_item.get("delta") or {}
 
-                # Initialize assistant message on first delta
-                if self.messages[-1]["role"] != "assistant":
-                    self.messages.append({"role": "assistant", "content": "", "reasoning": "", "reasoning_details": [{}]})
+                if delta:
+                    # Initialize assistant message on first delta
+                    if self.messages[-1]["role"] != "assistant":
+                        self.messages.append({"role": "assistant", "content": "", "reasoning": "", "reasoning_details": [{}]})
 
-                # Handle text content
-                delta_content = delta.get("content")
-                if delta_content:
-                    self.messages[-1]["content"] += delta_content
-                    self.cb.text_output(text=delta_content)
+                    # Handle text content
+                    delta_content = delta.get("content")
+                    if delta_content:
+                        self.messages[-1]["content"] += delta_content
+                        self.cb.text_output(text=delta_content)
 
-                # Handle reasoning (supports multiple formats)
-                # Anthropic models send reasoning in both delta.reasoning AND delta.reasoning_details
-                # We must use one OR the other, not both, to avoid duplication
-                reasoning_delta = None
-                reasoning_details = delta.get("reasoning_details", [])
+                    # Handle reasoning (supports multiple formats)
+                    # Anthropic models send reasoning in both delta.reasoning AND delta.reasoning_details
+                    # We must use one OR the other, not both, to avoid duplication
+                    reasoning_delta = None
+                    reasoning_details = delta.get("reasoning_details", [])
 
-                if reasoning_details and isinstance(reasoning_details, list):
-                    for detail in reasoning_details:
-                        if isinstance(detail, dict):
-                            detail_text = detail.get("text")
-                            if detail_text:
-                                reasoning_delta = (reasoning_delta or "") + detail_text
-                            elif detail.get("type") == "reasoning.summary":
-                                summary = detail.get("summary")
-                                if summary:
-                                    reasoning_delta = (reasoning_delta or "") + summary
+                    if reasoning_details and isinstance(reasoning_details, list):
+                        for detail in reasoning_details:
+                            if isinstance(detail, dict):
+                                detail_text = detail.get("text")
+                                if detail_text:
+                                    reasoning_delta = (reasoning_delta or "") + detail_text
+                                elif detail.get("type") == "reasoning.summary":
+                                    summary = detail.get("summary")
+                                    if summary:
+                                        reasoning_delta = (reasoning_delta or "") + summary
 
-                    if reasoning_details != [{}]:
-                        self.messages[-1]["reasoning_details"] = reasoning_details
+                        if reasoning_details != [{}]:
+                            self.messages[-1]["reasoning_details"] = reasoning_details
 
-                # Only fall back to delta.reasoning if reasoning_details didn't provide content
-                if reasoning_delta is None:
-                    reasoning_delta = delta.get("reasoning")
+                    # Only fall back to delta.reasoning if reasoning_details didn't provide content
+                    if reasoning_delta is None:
+                        reasoning_delta = delta.get("reasoning")
 
-                if reasoning_delta:
-                    self.messages[-1]["reasoning"] += reasoning_delta
-                    self.cb.think_output(text=reasoning_delta)
+                    if reasoning_delta:
+                        self.messages[-1]["reasoning"] += reasoning_delta
+                        self.cb.think_output(text=reasoning_delta)
 
-                # Handle tool calls
-                tool_calls = delta.get("tool_calls", [])
-                for tool_call in tool_calls:
-                    if "id" in tool_call:
-                        if "tool_calls" not in self.messages[-1]:
-                            self.messages[-1]["tool_calls"] = []
-                        self.messages[-1]["tool_calls"].append(tool_call)
-                        self.cb.tool_request(name=tool_call["function"]["name"], inputs={})
-                    self.messages[-1]["tool_calls"][-1]["function"]["arguments"] += tool_call["function"]["arguments"]
+                    # Handle tool calls
+                    tool_calls = delta.get("tool_calls", [])
+                    for tool_call in tool_calls:
+                        if "id" in tool_call:
+                            if "tool_calls" not in self.messages[-1]:
+                                self.messages[-1]["tool_calls"] = []
+                            self.messages[-1]["tool_calls"].append(tool_call)
+                            self.cb.tool_request(name=tool_call["function"]["name"], inputs={})
+                        self.messages[-1]["tool_calls"][-1]["function"]["arguments"] += tool_call["function"]["arguments"]
 
-                # Handle finish reasons
+                # Handle finish reasons. Checked whether or not the chunk carried a delta: the final
+                # chunk of a response may be an empty delta with just the finish_reason on it.
                 finish_reason = event_item.get("finish_reason")
                 if finish_reason:
-                    # Check for non-streamed reasoning in final message
-                    final_reasoning = event_item.get("message", {}).get("reasoning") or delta.get("reasoning")
-                    if final_reasoning and not self.messages[-1].get("reasoning"):
-                        self.messages[-1]["reasoning"] = final_reasoning
-                        self.cb.think_output(text=final_reasoning)
-                    # Detect tool calls from message content, not finish_reason string
-                    if self.messages[-1].get("tool_calls"):
-                        pending_tool_calls = True
+                    if finish_reason == "error":
+                        raise RuntimeError("OpenRouter reported the response as errored")
+                    round_finish = finish_reason
+                    if self.messages[-1]["role"] == "assistant":
+                        # Check for non-streamed reasoning in final message
+                        final_reasoning = event_item.get("message", {}).get("reasoning") or delta.get("reasoning")
+                        if final_reasoning and not self.messages[-1].get("reasoning"):
+                            self.messages[-1]["reasoning"] = final_reasoning
+                            self.cb.think_output(text=final_reasoning)
+                        # Detect tool calls from message content, not finish_reason string
+                        if self.messages[-1].get("tool_calls"):
+                            pending_tool_calls = True
                     if finish_reason not in ("stop", "tool_calls", "end_turn", "tool_use"):
                         logger.warning(f"Unexpected finish_reason: {finish_reason}")
                     continue  # Continue to catch usage chunk
 
             stream.close()
+            self._stream = None
+            self._checkStopped()  # a closed socket can read as a clean end of stream
+            if round_finish is None:
+                raise RuntimeError("The connection dropped before the model finished its response")
+            finish_reason = round_finish
 
             if not pending_tool_calls:
                 break

@@ -13,7 +13,7 @@ from utils import (
     archiveHistory, copyStory, archiveStoryDir, renameStory,
     loadAllPreviousHistory, systemInstructionFile, readMarkdown,
     listCoreVersions, EVAL_STORIES_DIR, PROMPT_CONTEXT_FILES,
-    loadModels, saveModels,
+    loadModels, saveModels, unifiedDiff,
 )
 from studio import listEvalTurns, runStudio, listRuns, loadRun
 
@@ -112,6 +112,14 @@ def handle_user_message(data: dict[str, str]):
         return
     narrator.handleUserMessage(data)
 
+# Handlers run in their own threads, so this arrives while user_message (or retry/edit) is still
+# blocked inside the provider's stream; the narrator discards the turn as if it had failed.
+@socket.on('stop_turn')
+def stop_turn():
+    global narrator
+    if narrator is not None:
+        narrator.stop()
+
 @socket.on('create_story')
 def create_story(data: dict[str, str]):
     display_name = data['story_name'].strip()
@@ -171,8 +179,10 @@ def summarize_history():
         return
     story_id = narrator.story_id
     logger.debug(f"summarizing story: '{story_id}' -- sending compaction message to model")
-    # Let the model write the summary / save any state it needs from the full conversation
-    narrator.handleUserMessage({"message": "System: archive story state"})
+    # Let the model write the summary / save any state it needs from the full conversation. If that
+    # turn fails, nothing is archived: the conversation would be gone with no summary to replace it.
+    if not narrator.handleUserMessage({"message": "System: archive story state"}):
+        return
     if archiveHistory(story_id):
         logger.debug(f"archived full history to previous/ for story: '{story_id}', starting fresh conversation")
         # clearMessages rebuilds context, which live-reads the freshly-written summary into the system prompt
@@ -333,19 +343,24 @@ def get_debug_messages():
         result.extend([truncate_system(m) for m in previous])
         result.append({"role": "_separator", "content": "Current Conversation"})
     # Current/live conversation: system message + active-path nodes, with a marker after each
-    # turn that changed files.
+    # turn that changed files carrying a unified diff of each entry it touched (the story context
+    # is replayed down the path the same way file_state_at does, so `before` is the parent's state).
     msgs = narrator.provider.messages
     if msgs and msgs[0].get("role") == "system":
         result.append(truncate_system(msgs[0]))
+    state: dict[str, str] = {}
     for nid in narrator.tree.path():
         node = narrator.tree.nodes[nid]
         result.extend(truncate_system(m) for m in node["messages"])
         files = node.get("files") or {}
         if files:
+            before = dict(state)
+            narrator.tree.apply_delta(state, files)
             result.append({
                 "role": "_files",
                 "changed": [f for f, c in files.items() if c is not None],
                 "removed": [f for f, c in files.items() if c is None],
+                "diffs": {f: unifiedDiff(f, before.get(f, ""), state.get(f, "")) for f in files if "/" not in f},
             })
     emit('debug_messages', result)
 

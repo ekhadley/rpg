@@ -21,9 +21,19 @@ uv run python app.py
 
 Runs on `http://localhost:5001`. Set `DEBUG=1` for verbose logging.
 
+## Tests
+
+```bash
+uv run pytest
+```
+
+Covers the history tree, the narrator's turn operations (including what happens when a turn fails), story copying/archiving/forking, the file tools, and the provider's stream loop. Nothing touches the network.
+
 ## How It Works
 
-The LM receives a system prompt assembled from the story's core instructions file and (optionally) story-specific context: a story plan, player character sheet, and running summary. It responds with narration and can make tool calls — rolling dice, reading/writing named entries of story context — to manage game state across turns.
+The LM receives a system prompt assembled from the story's core instructions file and (optionally) story-specific context: a story plan, player character sheet, and running summary. It responds with narration and can make tool calls — rolling dice, reading/writing/editing named entries of story context — to manage game state across turns.
+
+A turn that fails (a refused request, a dropped or hung connection, an error from the provider) or is stopped with the stop button is discarded whole: nothing is saved, the partial output is removed from the chat, and your message is put back in the input box.
 
 Story context is not stored as files on disk. It's a keyed collection of text the model reads and writes through its tools; the authoritative copy lives inside the conversation history (see [Story context](#story-context-and-rollback) below). Conversations are stored as JSON in each story's directory and can be archived to start fresh while keeping history accessible.
 

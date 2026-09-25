@@ -7,7 +7,7 @@ from flask_socketio import SocketIO
 from utils import EVAL_STORIES_DIR, getFullStoryInstruction, logger
 from history import TurnTree
 from model_tools import SYSTEM_TOOLBOXES
-from openrouter import OpenRouterProvider
+from openrouter import OpenRouterProvider, TurnFailed
 from callbacks import StudioCallbackHandler
 
 # The prompt studio regenerates one captured turn under two arms at once, so they can be read side
@@ -91,7 +91,8 @@ def loadRun(eval_id: str, file: str) -> dict:
     """A saved run, each lane flattened into render-ready events (the raw messages stay on disk)."""
     with open(f"{_evalDir(eval_id)}/runs/{file}") as f:
         run = json.load(f)
-    run["lanes"] = {lane: {"cost": l["cost"], "events": _replayEvents(l["messages"])} for lane, l in run["lanes"].items()}
+    run["lanes"] = {lane: {"cost": l["cost"], "error": l.get("error"), "events": _replayEvents(l["messages"])}
+                    for lane, l in run["lanes"].items()}
     return run
 
 def _runLane(socket: SocketIO, cfg: dict, lane: str, arm: dict, prefix: list[dict], before: dict, state: dict,
@@ -101,29 +102,37 @@ def _runLane(socket: SocketIO, cfg: dict, lane: str, arm: dict, prefix: list[dic
     if gate is not None and not is_primer:
         gate.wait()
     files = dict(before)  # this lane's own copy — the file tools mutate it during the run
-    tb = SYSTEM_TOOLBOXES[cfg["system"]](files)
-    provider = OpenRouterProvider(
-        model_name=arm["model"],
-        toolbox=tb,
-        callback_handler=StudioCallbackHandler(socket, cfg["run_id"], lane, gate if is_primer else None),
-        thinking_effort="max",
-        cache_mode=cfg["cache_mode"],
-    )
-    system_prompt = getFullStoryInstruction(cfg["system"], arm["version"], before)
-    block = {"type": "text", "text": system_prompt}
-    if (cc := provider.cacheControl()) is not None:
-        block["cache_control"] = cc
-    provider.messages = [{"role": "system", "content": [block]}] + prefix
+    # A lane that fails still reports in, so the run completes and the failure is visible in its
+    # column rather than leaving the run hanging on a lane that will never finish.
+    error, messages, cost = None, [], 0.0
     try:
+        tb = SYSTEM_TOOLBOXES[cfg["system"]](files)
+        provider = OpenRouterProvider(
+            model_name=arm["model"],
+            toolbox=tb,
+            callback_handler=StudioCallbackHandler(socket, cfg["run_id"], lane, gate if is_primer else None),
+            thinking_effort="max",
+            cache_mode=cfg["cache_mode"],
+        )
+        system_prompt = getFullStoryInstruction(cfg["system"], arm["version"], before)
+        block = {"type": "text", "text": system_prompt}
+        if (cc := provider.cacheControl()) is not None:
+            block["cache_control"] = cc
+        provider.messages = [{"role": "system", "content": [block]}] + prefix
         provider.run()
+        messages, cost = provider.messages[len(prefix) + 1:], provider.getCostStats()["total_cost"]
+    except TurnFailed as e:
+        error = str(e)
+    except Exception as e:  # a bad arm (missing core version, unknown system) or anything unexpected
+        logger.error(f"studio lane {lane} failed: {e}", exc_info=True)
+        error = str(e)
     finally:
         if is_primer and gate is not None:
             gate.set()  # a primer that produced nothing must still release the lanes behind it
 
-    cost = provider.getCostStats()["total_cost"]
-    socket.emit('studio_lane_end', {"run_id": cfg["run_id"], "lane": lane, "cost": cost})
+    socket.emit('studio_lane_end', {"run_id": cfg["run_id"], "lane": lane, "cost": cost, "error": error})
     with state["lock"]:
-        state["lanes"][lane] = {"messages": provider.messages[len(prefix) + 1:], "cost": cost}
+        state["lanes"][lane] = {"messages": messages, "cost": cost, "error": error}
         done = len(state["lanes"]) == state["total"]
     if done:
         path = _saveRun(cfg, state["lanes"])
