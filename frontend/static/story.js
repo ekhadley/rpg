@@ -18,14 +18,14 @@ const SYSTEMS = {
 const systemInfo = (name) => SYSTEMS[name] || { label: name || 'unknown', icon: 'fas fa-scroll' };
 
 import {
-    socket, storyList, chatHistory, chatHeader, welcomeWrapper, userInput, floatingButtons,
-    newStoryBtn, createStoryBtn, createStoryModal, createStoryModalClose, createStoryModalCancel,
+    socket, storyList, chatHistory, chatHeader, welcomeWrapper, userInput,
+    newStoryBtn, createStoryBtn, createStoryModal, createStoryModalCancel,
     createModelSelect, createSystemSelect, createCoreSelect,
     selectStoryConfigModal, selectStoryConfigModalClose, selectStoryConfigModalCancel,
     selectStoryConfigBtn, selectStoryModelSelect, selectStorySystemSelect,
-    copyStoryModal, copyStoryModalClose, copyStoryModalCancel,
+    copyStoryModal, copyStoryModalCancel,
     copyStoryBtn, copyStoryNameInput, copyStoryModelSelect,
-    copyStoryModalTitle, copyStoryModalIcon, copyStoryHint,
+    copyStoryHint,
     currentStory, setCurrentStory,
     pendingStoryName, setPendingStoryName,
     fileList, newContextFileBtn, rightSidebar,
@@ -39,11 +39,11 @@ import { brandIcon } from './brands.js';
 // only thing the server needs, so there is nothing to tick.
 const COPY_MODES = {
     duplicate: {
-        title: 'Duplicate Story', icon: 'fa-copy', button: 'Duplicate', suffix: ' (copy)',
+        button: 'Duplicate', suffix: ' (copy)',
         hint: 'An exact copy: story context and the whole message history as they stand now.',
     },
     run: {
-        title: 'New Run', icon: 'fa-rotate-right', button: 'Create Run', suffix: ' (run 2)',
+        button: 'Create Run', suffix: ' (run 2)',
         hint: 'The setup only: story context as it was before the first turn, with no messages. A fresh playthrough of the same starting point.',
     },
 };
@@ -203,22 +203,13 @@ function enterStoryView({ storyId, displayName, model, system }) {
     setCurrentStory(storyId);
     renderStoryList();  // moves the sidebar's active row to this story
     const titleEl = document.getElementById('current-story-title');
-    if (titleEl) titleEl.textContent = displayName;
+    titleEl.textContent = displayName;
+    titleEl.title = storyId;
     if (system) setHeaderIcon(system);
-    const modelSubtext = document.getElementById('current-story-model');
-    if (modelSubtext) {
-        modelSubtext.textContent = stripProvider(model);
-        modelSubtext.style.display = model ? '' : 'none';
-    }
-    const uuidSubtext = document.getElementById('current-story-uuid');
-    if (uuidSubtext) {
-        uuidSubtext.textContent = storyId;
-        uuidSubtext.style.display = storyId ? '' : 'none';
-    }
+    document.getElementById('current-story-model').textContent = model ? stripProvider(model) : '';
     if (chatHistory) chatHistory.innerHTML = '';
     if (welcomeWrapper) welcomeWrapper.style.display = 'none';
     if (chatHeader) chatHeader.style.display = 'flex';
-    if (floatingButtons) floatingButtons.style.display = 'flex';
     if (rightSidebar) rightSidebar.classList.add('visible');
     showTypingIndicator();
 }
@@ -254,8 +245,7 @@ export function renderStoryList() {
     }
 }
 
-// One story: its name, then the model it runs on and when it was last played. The tail fades out
-// on hover to make room for the row's menu button.
+// One story: its name, then the model it runs on. Hovering adds when it was last played (CSS).
 function storyRow(story) {
     const li = document.createElement('li');
     li.className = 'story-item' + (story.id === currentStory ? ' active' : '');
@@ -289,8 +279,6 @@ function openCopyStoryModal(story, mode, anchor) {
     copyMode = mode;
     const preset = COPY_MODES[mode];
     setPendingStoryName(story.id);
-    copyStoryModalTitle.textContent = preset.title;
-    copyStoryModalIcon.className = 'fas ' + preset.icon;
     copyStoryHint.textContent = preset.hint;
     copyStoryBtn.textContent = preset.button;
     if (copyStoryNameInput) copyStoryNameInput.value = story.name + preset.suffix;
@@ -488,8 +476,7 @@ export function initStory() {
         });
     }
 
-    // Create modal close/cancel
-    if (createStoryModalClose) createStoryModalClose.addEventListener('click', () => createStoryModal && createStoryModal.classList.remove('show'));
+    // Create modal cancel
     if (createStoryModalCancel) createStoryModalCancel.addEventListener('click', () => createStoryModal && createStoryModal.classList.remove('show'));
     // Close side popups on outside click (their open triggers stopPropagation, so the opening click never lands here)
     document.addEventListener('click', function(e) {
@@ -499,7 +486,6 @@ export function initStory() {
     });
 
     // Copy story modal handlers
-    if (copyStoryModalClose) copyStoryModalClose.addEventListener('click', closeCopyStoryModal);
     if (copyStoryModalCancel) copyStoryModalCancel.addEventListener('click', closeCopyStoryModal);
     if (copyStoryBtn) {
         copyStoryBtn.addEventListener('click', function() {
@@ -528,7 +514,6 @@ export function initStory() {
             if (chatHistory) chatHistory.innerHTML = '';
             if (welcomeWrapper) welcomeWrapper.style.display = '';
             if (chatHeader) chatHeader.style.display = 'none';
-            if (floatingButtons) floatingButtons.style.display = 'none';
             if (rightSidebar) rightSidebar.classList.remove('visible');
             if (fileList) fileList.innerHTML = '';
         }
@@ -680,7 +665,7 @@ export function initStory() {
     function setRawMode(raw) {
         rawMode = raw;
         fileViewerModes.querySelectorAll('.fv-mode').forEach(b => b.classList.toggle('active', (b.dataset.raw === '1') === raw));
-        fileViewerSave.style.display = raw && editable ? '' : 'none';
+        fileViewerSave.style.visibility = raw && editable ? '' : 'hidden';  // keeps its space, so the toggle beside it never moves
         if (raw) renderRaw(currentContent); else renderFile(currentContent);
     }
 

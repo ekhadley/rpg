@@ -406,7 +406,8 @@ def capture_eval_turn(data: dict[str, str]):
     if narrator is None or not turn_id:
         emit('error', {"message": "Capture requires an active story and a turn"})
         return
-    name = data.get('name', '').strip() or f"{loadStoryInfo(narrator.story_id)['story_name']} — turn"
+    turn_number = sum(narrator.tree.nodes[n]["role"] == "user" for n in narrator.tree.path_to(turn_id))
+    name = data.get('name', '').strip() or f"{loadStoryInfo(narrator.story_id)['story_name']} — turn {turn_number}"
     new_id = narrator.fork_to(turn_id, name, root=EVAL_STORIES_DIR)
     if new_id:
         emit('eval_turn_captured', {"id": new_id, "name": name})

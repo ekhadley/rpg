@@ -3,7 +3,7 @@ import {
     summarizeButton, summarizePopup, summarizePopupCancel, summarizePopupConfirm,
     costButton, costPopup, costTotalTokens, costAvgTokens, costTotalCost, costAvgCost, costLastTurn,
     themeToggleBtn,
-    settingsBtn, settingsModal, settingsModalClose, cacheModeSelect, defaultCoreSelect,
+    settingsBtn, settingsModal, cacheModeSelect, defaultCoreSelect,
     modelList, modelAddBtn, modelEditorBtn, modelEditorPopup,
     createModelSelectCustom, createModelSelectDropdown, createModelSelect,
     selectStoryModelSelectCustom, selectStoryModelSelectDropdown, selectStoryModelSelect,
@@ -459,7 +459,6 @@ export function initSettings() {
         if (settingsModal.classList.contains('show')) closeSettings();
         else positionPopupNear(settingsModal, settingsBtn);
     });
-    if (settingsModalClose) settingsModalClose.addEventListener('click', closeSettings);
     document.addEventListener('click', (e) => {
         if (settingsModal.classList.contains('show') && !settingsModal.contains(e.target) && !modelEditorPopup.contains(e.target)) closeSettings();
     });

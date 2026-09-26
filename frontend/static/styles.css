@@ -33,13 +33,20 @@ p { margin-top: 0; margin-bottom: 1rem; }
     --prose-font-size: 1.15rem;
     --prose-line-height: 1.8;
     --color-dnd: #dc3545;
-    --color-hp-blue: #0d6efd;
     --color-hp-gold: #d4a017;
-    --color-twd: #8a1c1c;
+    --color-twd: #c0392b;
+    --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'DejaVu Sans Mono', Menlo, Consolas, monospace;
+    /* Themed accents; Discord overrides them below with its own palette */
+    --user-action: var(--accent);
+    --color-thinking: var(--accent);
+    --color-dice: var(--success);
+    --btn-transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease, opacity 0.1s ease, transform 0.1s ease;
+}
+
+[data-theme="discord"] {
+    --user-action: #949cf7;
     --color-thinking: #7b8aff;
     --color-dice: #5fd4a0;
-    --color-tools: #ffbe3d;
-    --btn-transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease, opacity 0.1s ease, transform 0.1s ease;
 }
 
 /* Gruvbox Dark Theme */
@@ -357,7 +364,9 @@ body {
 }
 
 .story-model { font-size: 0.7rem; white-space: nowrap; }
-.story-date { font-size: 0.68rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The date only shows on hover, so the name gets the room the rest of the time */
+.story-date { display: none; font-size: 0.68rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.story-item:hover .story-date { display: inline; }
 
 /* Always in the row, so nothing shifts or hides when it fades in */
 .story-menu-btn {
@@ -397,44 +406,6 @@ body {
     background-color: var(--color-twd);
     -webkit-mask-image: url('/static/twd-logo.svg');
     mask-image: url('/static/twd-logo.svg');
-}
-
-.create-story-container {
-    padding: 12px 16px;
-    display: none;
-}
-
-.create-story-container.active {
-    display: block;
-}
-
-.create-story-container input {
-    width: 100%;
-    background-color: var(--msg-user);
-    border: none;
-    border-radius: 4px;
-    color: var(--text-normal);
-    padding: 8px 12px;
-    margin-bottom: 8px;
-}
-
-.create-story-container input:focus {
-    outline: none;
-    box-shadow: 0 0 0 2px var(--accent);
-}
-
-.create-story-container button {
-    width: 100%;
-    background-color: var(--accent);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 0;
-    cursor: pointer;
-}
-
-.create-story-container button:hover {
-    background-color: var(--accent-hover);
 }
 
 /* Theme Picker — always dark regardless of active theme */
@@ -846,10 +817,13 @@ body {
     gap: 8px;
 }
 
-/* .btn.btn-secondary, shrunk to fit the header (extra specificity to outrank the later .btn rules) */
+/* .btn.btn-secondary, sized to match the Rendered/Raw toggle beside it (extra specificity to outrank
+   the later .btn rules) */
 .file-viewer-header-actions .btn {
-    padding: 4px 12px;
-    font-size: 0.85rem;
+    padding: 3px 10px;
+    font-size: 0.78rem;
+    font-weight: normal;
+    line-height: inherit;
     color: var(--text-muted);
     border-radius: 0;
 }
@@ -867,7 +841,7 @@ body {
     resize: none;
     background: var(--bg-deep);
     color: var(--text);
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 0.9rem;
     line-height: 1.5;
 }
@@ -890,6 +864,7 @@ body {
     padding: 16px 0;
     border-right: 1px solid var(--border);
     font-family: var(--font-primary);
+    font-size: 0.8rem;
     position: relative;
 }
 
@@ -906,8 +881,6 @@ body {
 .file-viewer-toc-resize:hover,
 .file-viewer-toc-resize.active {
     background-color: var(--accent);
-}
-    font-size: 0.8rem;
 }
 
 .file-viewer-toc:empty {
@@ -996,7 +969,7 @@ body {
     background-color: var(--bg-alt);
     padding: 0.15em 0.4em;
     border-radius: 3px;
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 0.85em;
 }
 
@@ -1039,60 +1012,27 @@ body {
     background-color: var(--bg);
 }
 
+/* One row, the height of the sidebar headers beside it: icon, title, model, then the actions */
 .chat-header {
-    background-color: var(--bg);
-    color: var(--text);
-    border-bottom: none;
-    padding: 12px 16px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    box-shadow: none;
-}
-
-.story-header-content {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-}
-
-.story-title-row {
+    padding: 7px 12px;
     display: flex;
     align-items: center;
     gap: 8px;
+    border-bottom: 1px solid var(--border);
 }
 
 .story-header-icon {
-    font-size: 1.2rem;
-    opacity: 0.9;
+    font-size: 1rem;
     flex-shrink: 0;
 }
 
-.story-header-icon.fa-d-and-d {
-    color: var(--color-dnd); /* Red for D&D */
-}
-
-.story-header-icon.fa-wand-magic-sparkles {
-    color: var(--color-hp-blue); /* Blue for HP */
-}
-
-.story-header-icon.hp-logo-icon {
-    width: 2.4rem;
-    height: 2.4rem;
-}
-
-.story-header-icon.twd-logo-icon {
-    width: 2.4rem;
-    height: 2.4rem;
-}
-
-.story-header-icon.fa-scroll {
-    color: var(--text-muted);
-}
+.story-header-icon.fa-d-and-d { color: var(--color-dnd); }
+.story-header-icon.fa-scroll { color: var(--text-muted); }
+.story-header-icon.hp-logo-icon, .story-header-icon.twd-logo-icon { width: 20px; height: 20px; }
 
 .chat-header h5 {
     margin: 0;
+    min-width: 0;
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-bright);
@@ -1104,18 +1044,31 @@ body {
 .story-model-subtext {
     font-size: 0.75rem;
     color: var(--text-muted);
-    margin-top: 2px;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
-.story-uuid-subtext {
-    font-size: 0.65rem;
-    color: var(--text-muted);
-    opacity: 0.7;
-    white-space: nowrap;
+.story-model-subtext:not(:empty)::before { content: '·'; margin-right: 8px; }
+
+.chat-header-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: relative;  /* anchor for the cost and debug popups */
 }
+
+.chat-header-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    padding: 2px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+.chat-header-btn:hover { color: var(--text-bright); }
+.chat-header-btn:active { transform: scale(0.96); }
 
 .chat-container {
     flex: 1;
@@ -1160,7 +1113,7 @@ body {
     font-family: 'EB Garamond', Georgia, serif;
     font-size: var(--prose-font-size);
     line-height: var(--prose-line-height);
-    color: var(--accent);
+    color: var(--user-action);
     font-style: italic;
 }
 
@@ -1229,7 +1182,7 @@ body {
     background-color: var(--bg-alt);
     padding: 0.2em 0.4em;
     border-radius: 4px;
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 0.85em;
 }
 
@@ -1360,11 +1313,6 @@ body {
 .md-block strong { color: var(--text-bright); font-weight: 600; }
 .md-block em { font-style: italic; }
 
-/* Tool Messages in Chat - Hidden since we use side buttons now */
-.tool-message {
-    display: none;
-}
-
 /* Message Actions (Retry/Edit Buttons) - shown inline at end of message text */
 .message-actions {
     display: inline-flex;
@@ -1477,9 +1425,9 @@ body {
 .edit-textarea {
     width: 100%;
     background: transparent;
-    border: 1px solid var(--accent);
+    border: 1px solid var(--user-action);
     border-radius: 4px;
-    color: var(--accent);
+    color: var(--user-action);
     font-family: 'EB Garamond', Georgia, serif;
     font-size: var(--prose-font-size);
     line-height: var(--prose-line-height);
@@ -1626,7 +1574,7 @@ body {
 
 .reason-chunk {
     white-space: pre-wrap;
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 0.8rem;
     color: var(--text-muted);
 }
@@ -1678,55 +1626,10 @@ body {
 }
 
 
-/* Floating corner buttons */
-.floating-button {
-    position: fixed;
-    bottom: 24px;
-    background-color: transparent;
-    color: var(--text-muted);
-    border: none;
-    border-radius: 4px;
-    width: 32px;
-    height: 32px;
-    font-size: 0.9rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: var(--btn-transition);
-    opacity: 0.4;
-    z-index: 100;
-}
-
-.floating-button:hover {
-    opacity: 1;
-    color: var(--accent);
-}
-
-/* Floating button cluster (archive, cost, debug) */
-.floating-cost-container {
-    position: fixed;
-    bottom: 24px;
-    right: calc(var(--right-sidebar-width) + 32px);
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.floating-cost-container .floating-button {
-    position: relative;
-    bottom: auto;
-    right: auto;
-}
-
-/* Cost popup positioning for floating button */
-.floating-cost-container .cost-popup {
-    position: absolute;
-    bottom: 100%;
+/* The cost and debug popups hang below the header actions */
+.chat-header-actions .cost-popup {
+    top: calc(100% + 10px);
     right: 0;
-    left: auto;
-    margin-bottom: 8px;
 }
 
 .input-area form {
@@ -1836,14 +1739,6 @@ body {
     font-style: italic;
     font-size: 1em;
     letter-spacing: 0.15em;
-    animation: ellipsis-cycle 1.5s steps(1) infinite;
-}
-
-@keyframes ellipsis-cycle {
-    0%   { content: ''; }
-    25%  { content: ''; }
-    50%  { content: ''; }
-    75%  { content: ''; }
 }
 
 .typing-indicator::after {
@@ -2066,16 +1961,8 @@ body {
     transform: scale(0.96);
 }
 
-/* Cost Popup Styles */
-.cost-button-container {
-    position: relative;
-}
-
 .cost-popup {
     position: absolute;
-    bottom: 100%;
-    left: 0;
-    margin-bottom: 8px;
     width: 220px;
     background-color: var(--bg-deep);
     border: 1px solid var(--border);
@@ -2134,7 +2021,7 @@ body {
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-normal);
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
 }
 
@@ -2151,11 +2038,6 @@ html, body {
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* Override Bootstrap defaults */
-.bootstrap-wrapper, .container, .row, .col {
-    background-color: var(--bg-deep);
-}
-
 /* Enhanced shadows for depth */
 .sidebar {
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
@@ -2165,56 +2047,6 @@ html, body {
 .chat-wrapper {
     box-shadow: none;
 }
-/* Model and system selects - Pill style */
-.model-select-inline {
-    width: 100%;
-    padding: 8px 16px;
-    background: var(--bg);
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.select-pill {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: var(--bg-alt);
-    border-radius: 20px;
-    padding: 6px 8px 6px 8px;
-    border: 1px solid var(--border);
-    transition: var(--btn-transition);
-    position: relative;
-    overflow: visible;
-}
-
-.select-pill .custom-select-dropdown {
-    left: 50%;
-    transform: translateX(-50%) translateY(-8px);
-    min-width: max-content;
-    width: max-content;
-}
-
-.select-pill .custom-select-dropdown.show {
-    transform: translateX(-50%) translateY(0);
-}
-
-.select-pill:hover {
-    border-color: var(--accent);
-    background: rgb(from var(--accent) r g b / 0.1);
-}
-
-.select-pill i {
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    flex-shrink: 0;
-    transition: color 0.2s ease;
-}
-
-.select-pill:hover i {
-    color: var(--accent);
-}
-
 /* Custom Select Wrapper */
 .custom-select-wrapper {
     position: static;
@@ -2255,6 +2087,10 @@ html, body {
     color: var(--text-normal);
     font-size: 0.85rem;
     flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .custom-select-arrow {
@@ -2262,10 +2098,6 @@ html, body {
     font-size: 0.7rem;
     margin-left: 6px;
     transition: transform 0.2s ease, color 0.2s ease;
-}
-
-.select-pill:hover .custom-select-arrow {
-    color: var(--accent);
 }
 
 .custom-select.active .custom-select-arrow {
@@ -2281,7 +2113,6 @@ html, body {
     min-width: 100%;
     background: var(--bg-deep);
     border: 1px solid var(--border);
-    border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 1000;
     max-height: 200px;
@@ -2335,21 +2166,6 @@ html, body {
 /* Hidden native selects */
 .model-select, .system-select {
     display: none;
-}
-
-/* Disabled state for pills */
-.select-pill:has(.custom-select.disabled) {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-.select-pill:has(.custom-select.disabled):hover {
-    border-color: var(--border);
-    background: var(--bg-alt);
-}
-
-.select-pill:has(.custom-select.disabled) i {
-    opacity: 0.6;
 }
 
 /* Story Context Menu */
@@ -2448,23 +2264,21 @@ html, body {
     display: flex;
 }
 
-.side-popup .modal-header {
-    padding: 7px 10px;
-    border-bottom: 1px solid var(--border);
-}
-.side-popup .modal-header h5 { font-size: 1rem; }
-.side-popup .modal-header h5 i { color: var(--accent); font-size: 0.8em; margin-right: 8px; }
 .side-popup .modal-body { padding: 10px; }
-/* Default field layout in popup/modal chrome: the setting's name on the left, the control that
-   fans out (dropdown, sub-popup) or takes input on the right, on one row. */
+/* Default field layout in popup/modal chrome: the setting's name in a fixed left column, the
+   control that fans out (dropdown, sub-popup) or takes input on the right, so every control starts
+   at the same x. A row with no caption spans both columns. */
 .side-popup .form-group,
 .modal-overlay .form-group {
-    display: flex;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr);
     align-items: center;
     gap: 10px;
     margin-bottom: 10px;
 }
+
+.side-popup .form-group > :only-child,
+.modal-overlay .form-group > :only-child { grid-column: 1 / -1; }
 
 /* Rows are separated by a hairline rather than a gap. */
 .side-popup .form-group + .form-group,
@@ -2478,12 +2292,8 @@ html, body {
     white-space: nowrap;
     flex-shrink: 0;
 }
-.side-popup .form-group > .form-control,
-.modal-overlay .form-group > .form-control {
-    flex: 1;
-    min-width: 0;
-}
 .side-popup .modal-footer {
+    display: flex;
     padding: 8px 10px;
     gap: 8px;
     justify-content: flex-end;
@@ -2518,11 +2328,10 @@ html, body {
 
 /* Buttons and menus inside popup/modal chrome are square (the chat-area buttons keep their radius) */
 .side-popup .btn,
-.modal-overlay .btn,
-.modal-body .custom-select-dropdown { border-radius: 0; }
+.modal-overlay .btn { border-radius: 0; }
 
 /* Copy Story popup: a hairline-separated caption saying what this mode copies */
-#copy-story-modal { width: 340px; }
+#copy-story-modal, #create-story-modal { width: 360px; }
 
 #copy-story-modal .copy-story-hint {
     margin: 0 0 12px;
@@ -3020,20 +2829,20 @@ html, body {
     font-size: 0.7rem;
     color: var(--text-muted);
     flex-shrink: 0;
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-family: var(--font-mono);
 }
 
 .debug-tokens {
     font-size: 0.7rem;
     color: var(--text-muted);
     flex-shrink: 0;
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-family: var(--font-mono);
 }
 
 .debug-cache {
     font-size: 0.7rem;
     flex-shrink: 0;
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-family: var(--font-mono);
     color: var(--text-muted);
 }
 
@@ -3050,14 +2859,14 @@ html, body {
     color: var(--success);
     flex-shrink: 0;
     font-weight: 600;
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-family: var(--font-mono);
 }
 
 .debug-tool-names {
     font-size: 0.7rem;
     color: var(--warning);
     flex-shrink: 0;
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-family: var(--font-mono);
 }
 
 .debug-preview {
@@ -3096,7 +2905,7 @@ html, body {
     background: var(--bg-deep);
     border-radius: 6px;
     font-size: 0.78rem;
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-family: var(--font-mono);
     color: var(--text-normal);
     white-space: pre-wrap;
     word-break: break-word;
@@ -3145,7 +2954,7 @@ html, body {
     padding: 4px 16px 8px;
     color: var(--accent);
     font-size: 0.72rem;
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-mono);
     opacity: 0.85;
     cursor: pointer;
     transition: opacity 0.15s;
@@ -3169,7 +2978,7 @@ html, body {
     padding: 10px 12px;
     background: var(--bg-deep);
     font-size: 0.74rem;
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-family: var(--font-mono);
     color: var(--text-normal);
     white-space: pre-wrap;
     word-break: break-word;
@@ -3261,7 +3070,7 @@ html, body {
 }
 
 .eval-turn-item:hover .eval-turn-delete { opacity: 1; }
-.eval-turn-delete:hover { color: #e05561; }
+.eval-turn-delete:hover { color: var(--danger); }
 .eval-turn-delete:active { transform: scale(0.96); }
 
 .studio-wrapper {
@@ -3273,49 +3082,41 @@ html, body {
     background-color: var(--bg);
 }
 
+/* One row: title, the selected turn, its cost, then the run controls. The arm pickers live in the
+   column headers below. */
 .studio-header {
-    padding: 9px 12px;
-    border-bottom: 1px solid var(--border);
-    background-color: var(--bg-alt);
-}
-
-.studio-title-row {
+    padding: 7px 12px;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 12px;
-    margin-bottom: 10px;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
 }
 
-.studio-title-row h5 { margin: 0; color: var(--text-bright); font-size: 1.1rem; text-wrap: balance; }
+.studio-header h5 { margin: 0; color: var(--text-bright); font-size: 0.85rem; font-weight: 600; }
 
-/* The selected turn, read as a subtitle off the fixed title; the cost sits at the far right. */
+/* The selected turn, read as a subtitle off the fixed title; the cost pushes the controls right. */
 .studio-turn-name {
     color: var(--text-muted);
-    font-size: 0.86rem;
+    font-size: 0.8rem;
     padding-left: 12px;
     border-left: 1px solid var(--border);
-    text-wrap: pretty;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
 }
 
-.studio-title-row .studio-cost { margin-left: auto; }
-
 .studio-cost {
+    margin-left: auto;
     color: var(--text-muted);
     font-size: 0.8rem;
     font-variant-numeric: tabular-nums;
 }
 
-.studio-controls {
+.studio-field {
     display: flex;
-    align-items: flex-end;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.studio-controls label {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
+    align-items: center;
+    gap: 6px;
     font-size: 0.68rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -3323,47 +3124,86 @@ html, body {
     color: var(--text-muted);
 }
 
-.studio-controls select,
-.studio-controls input {
-    background-color: var(--bg);
+.studio-header input,
+.studio-history {
+    background-color: var(--bg-alt);
     color: var(--text-normal);
     border: 1px solid var(--border);
-    padding: 5px 7px;
+    border-radius: 0;
+    padding: 3px 6px;
     font-family: var(--font-primary);
-    font-size: 0.82rem;
+    font-size: 0.8rem;
 }
 
-.studio-controls input { width: 44px; font-variant-numeric: tabular-nums; }
+.studio-header input { width: 36px; font-variant-numeric: tabular-nums; }
 
 /* No spinner arrows — the range is 1-4 and typing is faster than clicking. */
-.studio-controls input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
-.studio-controls input[type="number"]::-webkit-outer-spin-button,
-.studio-controls input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.studio-header input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+.studio-header input[type="number"]::-webkit-outer-spin-button,
+.studio-header input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
-/* Row layout overriding the stacked label/control of its siblings, sitting at their baseline. */
-.studio-controls .studio-check {
-    flex-direction: row;
+.studio-check {
+    display: flex;
     align-items: center;
     gap: 6px;
-    padding-bottom: 5px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
     cursor: pointer;
 }
 
-/* Match the neighbouring selects rather than the modal surface the shared component was built for. */
-.studio-controls .studio-check .checkmark { background: var(--bg); }
+/* Fixed width so the box doesn't resize with whichever run is selected. A long label is cut at the
+   box edge (a select can't ellipsize), but the menu still opens full width. */
+.studio-history { width: 200px; color: var(--text-muted); cursor: pointer; }
+.studio-history:disabled { opacity: 0.5; cursor: default; }
 
+/* A strip under the header, only when there is something to warn about. */
 .studio-warning {
-    align-self: center;
+    padding: 5px 12px;
+    border-bottom: 1px solid var(--border);
     color: var(--warning);
     font-size: 0.74rem;
     text-wrap: pretty;
 }
 
-/* Fixed width so the box doesn't resize with whichever run is selected. A long label is cut at the
-   box edge (a select can't ellipsize), but the menu still opens full width. */
-.studio-controls .studio-history-field { margin-left: auto; }
-.studio-controls .studio-history { width: 220px; color: var(--text-muted); cursor: pointer; }
-.studio-history:disabled { opacity: 0.5; cursor: default; }
+.studio-warning:empty { display: none; }
+
+/* Each column's header: its arm's letter, model and core, on the same grid and divider as the lanes. */
+.studio-arms {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid var(--border);
+}
+
+.studio-arm {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 6px 10px;
+}
+
+.studio-arm + .studio-arm { border-left: 1px solid var(--border); }
+
+.studio-arm-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+}
+
+.studio-arm .custom-select-wrapper { position: relative; }
+.studio-arm .custom-select-wrapper:last-child { flex: 0 1 10rem; }
+
+.studio-arm .custom-select {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    padding: 3px 6px;
+    transition: border-color 0.15s ease;
+}
+
+.studio-arm .custom-select:hover { border-color: var(--accent); }
+.studio-arm .custom-select-value { font-size: 0.8rem; }
+.studio-arm .custom-select-dropdown { max-height: 60vh; }
 
 .studio-run-btn {
     background-color: var(--accent);
@@ -3403,24 +3243,6 @@ html, body {
 
 .studio-column + .studio-column { border-left: 1px solid var(--border); }
 
-/* Plain header text, not a surface — an outlined box here reads as another lane. */
-.studio-column-header {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    padding: 2px 0 8px;
-    background-color: var(--bg);
-    color: var(--text-muted);
-    font-size: 1rem;
-    font-family: monospace;
-}
-
-.studio-column-model {
-    display: block;
-    font-size: 0.75rem;
-    opacity: 0.7;
-}
-
 .studio-lane {
     border: 1px solid var(--border);
     background-color: var(--bg-alt);
@@ -3449,6 +3271,8 @@ html, body {
     overflow-y: auto;
 }
 
+/* A lane is already a narrow column, so its turn fills it instead of taking the chat's reading width */
+.studio-lane-body .assistant-turn-wrapper { width: auto; max-width: none; }
 .studio-lane-body .narrator-message { font-size: 0.95rem; }
 .studio-lane-body .message-actions { display: none; }
 

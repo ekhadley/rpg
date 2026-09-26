@@ -4,14 +4,12 @@ export const socket = io();
 // DOM elements
 export const welcomeWrapper = document.getElementById('welcome-container');
 export const chatHeader = document.getElementById('chat-header');
-export const floatingButtons = document.getElementById('floating-buttons');
 export const chatHistory = document.getElementById('chat-history');
 export const userInput = document.getElementById('user-input');
 export const messageForm = document.getElementById('message-form');
 export const newStoryBtn = document.getElementById('new-story-btn');
 export const createStoryBtn = document.getElementById('create-story-btn');
 export const createStoryModal = document.getElementById('create-story-modal');
-export const createStoryModalClose = document.getElementById('create-story-modal-close');
 export const createStoryModalCancel = document.getElementById('create-story-modal-cancel');
 export const storyList = document.getElementById('story-list');
 export const exportButton = document.getElementById('export-button');
@@ -51,7 +49,6 @@ export const debugFileCount = document.getElementById('debug-file-count');
 // Settings popup elements
 export const settingsBtn = document.getElementById('settings-btn');
 export const settingsModal = document.getElementById('settings-modal');
-export const settingsModalClose = document.getElementById('settings-modal-close');
 export const modelEditorBtn = document.getElementById('model-editor-btn');
 export const modelEditorPopup = document.getElementById('model-editor-popup');
 export const modelList = document.getElementById('model-list');
@@ -88,12 +85,9 @@ export const selectStoryModelSelect = document.getElementById('select-story-mode
 
 // Copy story modal elements
 export const copyStoryModal = document.getElementById('copy-story-modal');
-export const copyStoryModalClose = document.getElementById('copy-story-modal-close');
 export const copyStoryModalCancel = document.getElementById('copy-story-modal-cancel');
 export const copyStoryBtn = document.getElementById('copy-story-btn');
 export const copyStoryNameInput = document.getElementById('copy_story_name');
-export const copyStoryModalTitle = document.getElementById('copy-story-modal-title');
-export const copyStoryModalIcon = document.getElementById('copy-story-modal-icon');
 export const copyStoryHint = document.getElementById('copy-story-hint');
 export const copyStoryModelSelectCustom = document.getElementById('copy-story-model-select-custom');
 export const copyStoryModelSelectDropdown = document.getElementById('copy-story-model-select-dropdown');

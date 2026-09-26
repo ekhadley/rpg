@@ -81,40 +81,63 @@
             <ul class="story-list" id="story-list"></ul>
         </div>
 
-        <!-- Prompt studio: one captured turn, regenerated under two arms (model + core version) -->
+        <!-- Prompt studio: one captured turn, regenerated under two arms (model + core version). Each arm's
+             pickers head the column its lanes stream into. -->
         <div class="studio-wrapper" id="studio-wrapper" style="display: none;">
             <div class="studio-header">
-                <div class="studio-title-row">
-                    <h5>Prompt Studio</h5>
-                    <span class="studio-turn-name" id="studio-turn-name"></span>
-                    <span class="studio-cost" id="studio-cost"></span>
+                <h5>Prompt Studio</h5>
+                <span class="studio-turn-name" id="studio-turn-name"></span>
+                <span class="studio-cost" id="studio-cost"></span>
+                <label class="studio-field">N
+                    <input type="number" id="studio-n" value="1" min="1" max="4">
+                </label>
+                <label class="studio-check custom-checkbox">
+                    <input type="checkbox" id="studio-cache"><span class="checkmark"></span>Cache
+                </label>
+                <button class="studio-run-btn" id="studio-run-btn">
+                    <i class="fas fa-play"></i> Generate
+                </button>
+                <select class="studio-history" id="studio-history" title="Past runs"></select>
+            </div>
+            <div class="studio-warning" id="studio-warning"></div>
+            <div class="studio-arms">
+                <div class="studio-arm">
+                    <span class="studio-arm-label">A</span>
+                    <div class="custom-select-wrapper">
+                        <div class="custom-select" id="studio-model-a-custom" tabindex="0">
+                            <span class="custom-select-value"></span>
+                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                        </div>
+                        <select id="studio-model-a" style="display: none;"></select>
+                        <div class="custom-select-dropdown" id="studio-model-a-dropdown"></div>
+                    </div>
+                    <div class="custom-select-wrapper">
+                        <div class="custom-select" id="studio-ver-a-custom" tabindex="0">
+                            <span class="custom-select-value"></span>
+                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                        </div>
+                        <select id="studio-ver-a" style="display: none;"></select>
+                        <div class="custom-select-dropdown" id="studio-ver-a-dropdown"></div>
+                    </div>
                 </div>
-                <div class="studio-controls" id="studio-controls">
-                    <label>A model
-                        <select id="studio-model-a"></select>
-                    </label>
-                    <label>A core
-                        <select id="studio-ver-a"></select>
-                    </label>
-                    <label>B model
-                        <select id="studio-model-b"></select>
-                    </label>
-                    <label>B core
-                        <select id="studio-ver-b"></select>
-                    </label>
-                    <label>N
-                        <input type="number" id="studio-n" value="1" min="1" max="4">
-                    </label>
-                    <label class="studio-check custom-checkbox">
-                        <input type="checkbox" id="studio-cache"><span class="checkmark"></span>Cache
-                    </label>
-                    <button class="studio-run-btn" id="studio-run-btn">
-                        <i class="fas fa-play"></i> Generate
-                    </button>
-                    <span class="studio-warning" id="studio-warning"></span>
-                    <label class="studio-history-field">Past runs
-                        <select class="studio-history" id="studio-history"></select>
-                    </label>
+                <div class="studio-arm">
+                    <span class="studio-arm-label">B</span>
+                    <div class="custom-select-wrapper">
+                        <div class="custom-select" id="studio-model-b-custom" tabindex="0">
+                            <span class="custom-select-value"></span>
+                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                        </div>
+                        <select id="studio-model-b" style="display: none;"></select>
+                        <div class="custom-select-dropdown" id="studio-model-b-dropdown"></div>
+                    </div>
+                    <div class="custom-select-wrapper">
+                        <div class="custom-select" id="studio-ver-b-custom" tabindex="0">
+                            <span class="custom-select-value"></span>
+                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                        </div>
+                        <select id="studio-ver-b" style="display: none;"></select>
+                        <div class="custom-select-dropdown" id="studio-ver-b-dropdown"></div>
+                    </div>
                 </div>
             </div>
             <div class="studio-columns" id="studio-columns"></div>
@@ -122,14 +145,73 @@
 
         <!-- Main chat area -->
         <div class="chat-wrapper" id="chat-wrapper">
+            <!-- One line: system icon, title · model (the story id on hover), then the story's actions -->
             <div class="chat-header" id="chat-header" style="display: none;">
-                <div class="story-header-content">
-                    <div class="story-title-row">
-                        <i id="current-story-icon" class="story-header-icon" style="display: none;"></i>
-                        <h5 id="current-story-title"></h5>
+                <i id="current-story-icon" class="story-header-icon" style="display: none;"></i>
+                <h5 id="current-story-title"></h5>
+                <span id="current-story-model" class="story-model-subtext"></span>
+                <div class="chat-header-actions">
+                    <button id="summarize-button" class="chat-header-btn" title="Summarize current conversation">
+                        <i class="fas fa-archive"></i>
+                    </button>
+                    <button id="cost-button" class="chat-header-btn" title="Cost information">
+                        <i class="fas fa-sack-dollar"></i>
+                    </button>
+                    <button id="export-button" class="chat-header-btn">
+                        <i class="fas fa-code"></i>
+                    </button>
+                    <div id="debug-popup" class="cost-popup">
+                        <div class="cost-popup-header">
+                            <i class="fas fa-code"></i>
+                            <span>Conversation Debug</span>
+                        </div>
+                        <div class="cost-popup-body">
+                            <div class="cost-stat">
+                                <span class="cost-label">User Turns</span>
+                                <span class="cost-value" id="debug-user-count">0</span>
+                            </div>
+                            <div class="cost-stat">
+                                <span class="cost-label">Assistant Messages</span>
+                                <span class="cost-value" id="debug-assistant-count">0</span>
+                            </div>
+                            <div class="cost-stat">
+                                <span class="cost-label">Tool Calls</span>
+                                <span class="cost-value" id="debug-tool-count">0</span>
+                            </div>
+                            <div class="cost-stat">
+                                <span class="cost-label">File Edits</span>
+                                <span class="cost-value" id="debug-file-count">0</span>
+                            </div>
+                        </div>
                     </div>
-                    <div id="current-story-model" class="story-model-subtext" style="display: none;"></div>
-                    <div id="current-story-uuid" class="story-uuid-subtext" style="display: none;"></div>
+                    <div id="cost-popup" class="cost-popup">
+                        <div class="cost-popup-header">
+                            <i class="fas fa-sack-dollar"></i>
+                            <span>Usage & Cost</span>
+                        </div>
+                        <div class="cost-popup-body">
+                            <div class="cost-stat">
+                                <span class="cost-label">Total Tokens</span>
+                                <span class="cost-value" id="cost-total-tokens">0</span>
+                            </div>
+                            <div class="cost-stat">
+                                <span class="cost-label">Avg Tokens/Turn</span>
+                                <span class="cost-value" id="cost-avg-tokens">0</span>
+                            </div>
+                            <div class="cost-stat">
+                                <span class="cost-label">Total Cost</span>
+                                <span class="cost-value" id="cost-total-cost">$0.00</span>
+                            </div>
+                            <div class="cost-stat">
+                                <span class="cost-label">Avg Cost/Turn</span>
+                                <span class="cost-value" id="cost-avg-cost">$0.00</span>
+                            </div>
+                            <div class="cost-stat">
+                                <span class="cost-label">Last Turn</span>
+                                <span class="cost-value" id="cost-last-turn">$0.00</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="chat-container">
@@ -156,71 +238,6 @@
             <div class="welcome-container" id="welcome-container">
                 <p>Select an existing story from the sidebar or create a new one to begin your adventure.</p>
                 <i class="fas fa-dice-d20 fa-3x" style="color: var(--accent); opacity: 0.8; margin-bottom: 20px;"></i>
-            </div>
-
-            <!-- Floating corner buttons -->
-            <div class="floating-cost-container" id="floating-buttons" style="display: none;">
-                <button id="summarize-button" class="floating-button" title="Summarize current conversation">
-                    <i class="fas fa-archive"></i>
-                </button>
-                <button id="cost-button" class="floating-button" title="Cost information">
-                    <i class="fas fa-sack-dollar"></i>
-                </button>
-                <button id="export-button" class="floating-button">
-                    <i class="fas fa-code"></i>
-                </button>
-                <div id="debug-popup" class="cost-popup">
-                    <div class="cost-popup-header">
-                        <i class="fas fa-code"></i>
-                        <span>Conversation Debug</span>
-                    </div>
-                    <div class="cost-popup-body">
-                        <div class="cost-stat">
-                            <span class="cost-label">User Turns</span>
-                            <span class="cost-value" id="debug-user-count">0</span>
-                        </div>
-                        <div class="cost-stat">
-                            <span class="cost-label">Assistant Messages</span>
-                            <span class="cost-value" id="debug-assistant-count">0</span>
-                        </div>
-                        <div class="cost-stat">
-                            <span class="cost-label">Tool Calls</span>
-                            <span class="cost-value" id="debug-tool-count">0</span>
-                        </div>
-                        <div class="cost-stat">
-                            <span class="cost-label">File Edits</span>
-                            <span class="cost-value" id="debug-file-count">0</span>
-                        </div>
-                    </div>
-                </div>
-                <div id="cost-popup" class="cost-popup">
-                    <div class="cost-popup-header">
-                        <i class="fas fa-sack-dollar"></i>
-                        <span>Usage & Cost</span>
-                    </div>
-                    <div class="cost-popup-body">
-                        <div class="cost-stat">
-                            <span class="cost-label">Total Tokens</span>
-                            <span class="cost-value" id="cost-total-tokens">0</span>
-                        </div>
-                        <div class="cost-stat">
-                            <span class="cost-label">Avg Tokens/Turn</span>
-                            <span class="cost-value" id="cost-avg-tokens">0</span>
-                        </div>
-                        <div class="cost-stat">
-                            <span class="cost-label">Total Cost</span>
-                            <span class="cost-value" id="cost-total-cost">$0.00</span>
-                        </div>
-                        <div class="cost-stat">
-                            <span class="cost-label">Avg Cost/Turn</span>
-                            <span class="cost-value" id="cost-avg-cost">$0.00</span>
-                        </div>
-                        <div class="cost-stat">
-                            <span class="cost-label">Last Turn</span>
-                            <span class="cost-value" id="cost-last-turn">$0.00</span>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -250,12 +267,6 @@
 
     <!-- Create Story Modal -->
     <div id="create-story-modal" class="side-popup">
-        <div class="modal-header">
-            <h5>Create New Story</h5>
-            <button class="modal-close" id="create-story-modal-close">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
         <div class="modal-body">
                 <div class="form-group">
                     <label for="new_story_name">Story Name</label>
@@ -268,7 +279,7 @@
                     >
                 </div>
                 <div class="form-group">
-                    <label class="select-label">System:</label>
+                    <label class="select-label">System</label>
                     <div class="custom-select-wrapper">
                         <div class="custom-select" id="create-system-select-custom" tabindex="0">
                             <span class="custom-select-value">hp</span>
@@ -287,7 +298,7 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="select-label">Core:</label>
+                    <label class="select-label">Core</label>
                     <div class="custom-select-wrapper">
                         <div class="custom-select" id="create-core-select-custom" tabindex="0">
                             <span class="custom-select-value">{{ cores[0] }}</span>
@@ -306,7 +317,7 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="select-label">Model:</label>
+                    <label class="select-label">Model</label>
                     <div class="custom-select-wrapper">
                         <div class="custom-select" id="create-model-select-custom" tabindex="0">
                             <span class="custom-select-value">{{ models[0] }}</span>
@@ -333,12 +344,6 @@
 
     <!-- Settings popup (anchored to the sidebar gear) -->
     <div id="settings-modal" class="side-popup">
-        <div class="modal-header">
-            <h5><i class="fas fa-gear"></i>Settings</h5>
-            <button class="modal-close" id="settings-modal-close">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
         <div class="modal-body">
             <div class="form-group">
                 <label class="select-label">Prompt Caching</label>
@@ -502,16 +507,10 @@
 
     <!-- Copy Story Modal -->
     <div id="copy-story-modal" class="side-popup">
-        <div class="modal-header">
-            <h5><i class="fas fa-copy" id="copy-story-modal-icon"></i><span id="copy-story-modal-title">Duplicate Story</span></h5>
-            <button class="modal-close" id="copy-story-modal-close">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
         <div class="modal-body">
             <p class="copy-story-hint" id="copy-story-hint"></p>
             <div class="form-group">
-                <label for="copy_story_name">New Story Name</label>
+                <label for="copy_story_name">Name</label>
                 <input type="text" id="copy_story_name" class="form-control" placeholder="Enter new story name" required>
             </div>
             <div class="form-group">
@@ -602,11 +601,11 @@
                     <span class="file-viewer-meta" id="file-viewer-meta"></span>
                 </div>
                 <div class="file-viewer-header-actions">
+                    <button class="btn btn-secondary" id="file-viewer-save">Save</button>
                     <div class="file-viewer-modes" id="file-viewer-modes">
                         <button class="fv-mode active" data-raw="0">Rendered</button>
                         <button class="fv-mode" data-raw="1">Raw</button>
                     </div>
-                    <button class="btn btn-secondary" id="file-viewer-save">Save</button>
                     <button class="modal-close" id="file-viewer-close">
                         <i class="fas fa-times"></i>
                     </button>

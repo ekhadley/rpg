@@ -1,4 +1,4 @@
-import { userInput, summarizePopup, summarizeButton, selectStoryConfigModal, copyStoryModal, exportButton, socket, fileViewerOverlay, debugModal, debugModalClose, settingsModal, modelEditorPopup } from './state.js';
+import { userInput, summarizePopup, summarizeButton, selectStoryConfigModal, createStoryModal, copyStoryModal, exportButton, socket, fileViewerOverlay, debugModal, debugModalClose, settingsModal, modelEditorPopup } from './state.js';
 import { setPendingStoryName } from './state.js';
 import { initAllDropdowns } from './dropdowns.js';
 import { initStory, selectStoryDirectly, closeCopyStoryModal } from './story.js';
@@ -85,6 +85,7 @@ window.onload = function() {
                 selectStoryConfigModal.classList.remove('show');
                 setPendingStoryName(null);
             }
+            if (createStoryModal) createStoryModal.classList.remove('show');
             if (copyStoryModal && copyStoryModal.classList.contains('show')) closeCopyStoryModal();
             if (fileViewerOverlay && fileViewerOverlay.classList.contains('show')) fileViewerOverlay.classList.remove('show');
             if (debugModal && debugModal.classList.contains('show')) debugModal.classList.remove('show');

@@ -2,6 +2,7 @@ import { socket } from './state.js';
 import { ensureLiveWrapper, appendReasoning, appendTool, appendDice, closeRows } from './reasoningRow.js';
 import { appendNarration, renderStreamedNarration } from './chat.js';
 import { showToast, showErrorPopup } from './ui.js';
+import { initCustomDropdown, setDropdownOptions } from './dropdowns.js';
 
 // The prompt studio: pick a captured turn, regenerate it under two arms at once — an arm being a
 // model plus a core-instruction version — and read the results side by side. Lanes stream through
@@ -16,10 +17,6 @@ const studioColumns = document.getElementById('studio-columns');
 const studioTurnName = document.getElementById('studio-turn-name');
 const studioCost = document.getElementById('studio-cost');
 const studioRunBtn = document.getElementById('studio-run-btn');
-const verASel = document.getElementById('studio-ver-a');
-const verBSel = document.getElementById('studio-ver-b');
-const modelASel = document.getElementById('studio-model-a');
-const modelBSel = document.getElementById('studio-model-b');
 const nInput = document.getElementById('studio-n');
 const cacheCheck = document.getElementById('studio-cache');
 const historySel = document.getElementById('studio-history');
@@ -34,15 +31,24 @@ let laneWrappers = {};   // lane id -> the in-progress wrapper it streams into
 const EMPTY_NO_TURN = 'Select a captured turn from the sidebar.';
 const EMPTY_TURN = 'Generate to regenerate this turn under both arms, or load a past run.';
 
-function options(sel, values, selected) {
-    sel.innerHTML = '';
-    for (const v of values) {
-        const o = document.createElement('option');
-        o.value = v;
-        o.textContent = v;
-        if (v === selected) o.selected = true;
-        sel.appendChild(o);
-    }
+// The two arms' pickers, each a custom dropdown heading its column: [{ model, core }], A then B.
+const picker = (id) => ({ native: document.getElementById(id), custom: document.getElementById(id + '-custom'), menu: document.getElementById(id + '-dropdown') });
+const arms = ['a', 'b'].map(s => ({ model: picker('studio-model-' + s), core: picker('studio-ver-' + s) }));
+const allPickers = arms.flatMap(a => [a.model, a.core]);
+
+// Refill a picker's options, then select `selected` if given (else the current value, if it survives).
+function fill(p, values, selected) {
+    setDropdownOptions(p.custom, p.menu, p.native, values);
+    if (selected !== undefined) choose(p, selected);
+}
+
+// Select a value, adding it to the options first if it isn't one (a turn's or a past run's model or core
+// may have left the list since).
+function choose(p, value) {
+    const values = [...p.native.options].map(o => o.value);
+    if (!values.includes(value)) setDropdownOptions(p.custom, p.menu, p.native, [...values, value]);
+    p.native.value = value;
+    p.native.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function setMode(mode) {
@@ -54,6 +60,7 @@ function setMode(mode) {
     storyList.style.display = studio ? 'none' : '';
     studioWrapper.style.display = studio ? '' : 'none';
     chatWrapper.style.display = studio ? 'none' : '';
+    document.getElementById('right-sidebar').style.display = studio ? 'none' : '';  // the Play story's context doesn't apply to a captured turn
     modeToggle.querySelectorAll('.mode-option').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
     if (studio) {
         socket.emit('list_eval_turns');
@@ -76,7 +83,8 @@ function renderEvalTurns(turns) {
         li.dataset.id = t.id;
         li.innerHTML = '<div class="eval-turn-content">'
             + '<span class="eval-turn-name"></span>'
-            + '<span class="eval-turn-meta">' + t.system + ' · ' + t.model.split('/').pop() + '</span>'
+            + '<span class="eval-turn-meta">' + t.system + ' · ' + t.model.split('/').pop()
+            + ' · ' + new Date(t.created).toLocaleDateString([], { month: 'short', day: 'numeric' }) + '</span>'
             + '</div>'
             + '<button class="eval-turn-delete" title="Delete captured turn"><i class="fas fa-trash"></i></button>';
         li.querySelector('.eval-turn-name').textContent = t.name;
@@ -114,23 +122,14 @@ function renderRunHistory(runs) {
     }
 }
 
-// Default an arm's model to the one the turn was captured from, adding it if it isn't in the list.
-function pickModel(sel, model) {
-    if (![...sel.options].some(o => o.value === model)) {
-        const o = document.createElement('option');
-        o.value = model;
-        o.textContent = model;
-        sel.appendChild(o);
-    }
-    sel.value = model;
-}
-
-// The Generate button and the past-runs picker follow two facts — is a turn selected, is a run in
-// flight — and are set nowhere else, so every path that changes either fact agrees with the others.
+// The Generate button, the past-runs picker and the arm pickers follow two facts — is a turn selected,
+// is a run in flight — and are set nowhere else, so every path that changes either fact agrees with the
+// others. The arm pickers lock during a run so the column headers keep describing what streams below them.
 function syncControls() {
     studioRunBtn.disabled = running || !selectedTurn;
     studioRunBtn.title = !selectedTurn ? 'Select a captured turn first' : running ? 'A run is in progress' : '';
     historySel.disabled = running;
+    allPickers.forEach(p => p.native.disabled = running);
 }
 
 function setRunning(r) {
@@ -167,27 +166,21 @@ function selectTurn(turn) {
     studioTurnName.textContent = turn.name;
     clearColumns(EMPTY_TURN);
     socket.emit('list_studio_runs', { eval_id: turn.id });
-    pickModel(modelASel, turn.model);
-    pickModel(modelBSel, turn.model);
-    if (turn.core && [...verASel.options].some(o => o.value === turn.core)) verASel.value = turn.core;  // arm A defaults to the core version the turn was played under
+    arms.forEach(a => choose(a.model, turn.model));
+    if (turn.core && [...arms[0].core.native.options].some(o => o.value === turn.core)) choose(arms[0].core, turn.core);  // arm A defaults to the core version the turn was played under
     evalTurnList.querySelectorAll('.eval-turn-item').forEach(li => li.classList.toggle('active', li.dataset.id === turn.id));
 }
 
-// Build the two columns and their lanes up front, so streaming just fills them in.
+// Build the two columns and their lanes up front, so streaming just fills them in. The arm pickers
+// above are set to the run's arms, so each column's header names what it shows.
 function buildColumns(cfg) {
     studioColumns.innerHTML = '';
     laneWrappers = {};
     cfg.arms.forEach((arm, a) => {
+        choose(arms[a].model, arm.model);
+        choose(arms[a].core, arm.version);
         const col = document.createElement('div');
         col.className = 'studio-column';
-        const head = document.createElement('div');
-        head.className = 'studio-column-header';
-        head.textContent = arm.version;
-        const model = document.createElement('span');
-        model.className = 'studio-column-model';
-        model.textContent = arm.model;
-        head.appendChild(model);
-        col.appendChild(head);
         for (let i = 0; i < cfg.n; i++) {
             const lane = 'ab'[a] + '-' + i;
             const laneEl = document.createElement('div');
@@ -243,6 +236,7 @@ export function initStudio() {
     modeToggle.querySelectorAll('.mode-option').forEach(btn => {
         btn.addEventListener('click', () => setMode(btn.dataset.mode));
     });
+    allPickers.forEach(p => initCustomDropdown(p.custom, p.menu, p.native));
 
     cacheCheck.addEventListener('change', updateWarning);
     nInput.addEventListener('input', updateWarning);
@@ -257,8 +251,7 @@ export function initStudio() {
         if (!selectedTurn || running) return;
         socket.emit('studio_run', {
             eval_id: selectedTurn,
-            arms: [{ model: modelASel.value, version: verASel.value },
-                   { model: modelBSel.value, version: verBSel.value }],
+            arms: arms.map(a => ({ model: a.model.native.value, version: a.core.native.value })),
             n: parseInt(nInput.value, 10),
             cache: cacheCheck.checked,
         });
@@ -271,16 +264,14 @@ export function initStudio() {
     socket.on('eval_turn_captured', (d) => showToast('Captured "' + d.name + '" for the studio'));
 
     socket.on('studio_options', function(data) {
-        if (!modelASel.options.length) options(modelASel, data.models, data.models[1]);
-        if (!modelBSel.options.length) options(modelBSel, data.models, data.models[1]);
+        arms.forEach(a => { if (!a.model.native.options.length) fill(a.model, data.models, data.models[1]); });
         const vers = data.versions;
-        options(verASel, vers, data.default_version);
-        options(verBSel, vers, vers[vers.length - 1]);
+        fill(arms[0].core, vers, data.default_version);
+        fill(arms[1].core, vers, vers[vers.length - 1]);
     });
 
     socket.on('models_updated', (data) => {
-        options(modelASel, data.models, modelASel.value);
-        options(modelBSel, data.models, modelBSel.value);
+        arms.forEach(a => fill(a.model, data.models));
     });
 
     socket.on('studio_runs', function(d) {
