@@ -201,7 +201,7 @@ If the answers concern you, act on it. In a conversation the push-back can come 
 
 ## Managing Story Files
 
-You have access to a single directory containing files for the current story, as well as tools to read, write, and append to files there.
+You have access to a single directory containing files for the current story, as well as tools to read, write, edit, and append to files there.
 
 **File conventions:**
 - `pc` — the player character file. Always this name. In a hard system, this is a full character sheet with stats, abilities, and inventory. In a soft system, this is a character description — background, personality, capabilities, relationships, and any other details that define who they are.
